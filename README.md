@@ -11,28 +11,21 @@ A macOS application that captures microphone input, transcribes speech using a l
 
 ## Installation
 
-### Option 1: Run from Source
+### Quick Start with Launcher
 ```bash
 # Clone the repository
 git clone <repo-url>
 cd v2t
 
-# Install dependencies with uv
+# Install dependencies
 uv sync
 
-# Run the app
-uv run python main.py
-```
+# Run with the launcher script
+./start.sh
 
-### Option 2: Standalone App
-```bash
-# Build the app
-./build_app.sh
-
-# Move to Applications
-mv dist/Voice-to-Text.app /Applications/
-
-# Run from Applications folder or Spotlight
+# Or add alias to your shell (already done if you followed setup)
+source ~/.zshrc
+v2t
 ```
 
 ## Setup
@@ -59,17 +52,6 @@ The app requires the following macOS permissions:
 - **Transcription**: faster-whisper (Optimized Whisper implementation)
 - **Audio**: sounddevice + numpy
 - **Input Control**: pynput
-- **Bundling**: PyInstaller
-
-## Development
-
-```bash
-# Install dev dependencies
-uv add --dev pyinstaller
-
-# Build standalone app
-./build_app.sh
-```
 
 ## License
 
