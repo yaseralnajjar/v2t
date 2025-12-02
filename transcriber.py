@@ -1,11 +1,11 @@
-from faster_whisper import WhisperModel
+import whisper
 import numpy as np
 import os
 
 class AudioTranscriber:
-    def __init__(self, model_size="base.en", device="cpu", compute_type="int8"):
+    def __init__(self, model_size="base.en", device="cpu"):
         print(f"Loading Whisper model '{model_size}' on {device}...", flush=True)
-        self.model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        self.model = whisper.load_model(model_size, device=device)
         print("Model loaded.", flush=True)
 
     def transcribe(self, audio_data):
@@ -20,7 +20,7 @@ class AudioTranscriber:
         if audio_data.ndim > 1:
             audio_data = audio_data.flatten()
 
-        # faster-whisper expects float32 audio
+        # openai-whisper expects float32 audio
         if audio_data.dtype != np.float32:
             audio_data = audio_data.astype(np.float32)
 
@@ -33,14 +33,11 @@ class AudioTranscriber:
             if max_val < 0.5:
                 audio_data = audio_data / max_val * 0.5
 
-
-        segments, info = self.model.transcribe(audio_data, beam_size=5)
+        # openai-whisper transcribe
+        # fp16=False for CPU to avoid warnings/errors if not supported
+        result = self.model.transcribe(audio_data, fp16=False)
         
-        text = []
-        for segment in segments:
-            text.append(segment.text)
-            
-        return " ".join(text).strip()
+        return result["text"].strip()
 
 if __name__ == "__main__":
     # Test the transcriber (needs a dummy audio or real one)
