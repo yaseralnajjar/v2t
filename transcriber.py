@@ -1,11 +1,27 @@
-import whisper
+from pywhispercpp.model import Model
 import numpy as np
 import os
 
 class AudioTranscriber:
     def __init__(self, model_size="base.en", device="cpu"):
-        print(f"Loading Whisper model '{model_size}' on {device}...", flush=True)
-        self.model = whisper.load_model(model_size, device=device)
+        # device param is kept for compatibility but pywhispercpp handles backend selection automatically (e.g. Metal on Mac)
+        # We construct the local model path assuming it's relative to the project root or in a known location
+        # Adjust the path as per your project structure. Here assuming 'models/whisper-cpp/ggml-model.bin'
+        # exists for the 'base.en' model. If model_size changes, this path logic needs to be dynamic or configured.
+        
+        # For this specific setup, we are using the converted 'base.en' model located at:
+        project_root = os.path.dirname(os.path.abspath(__file__))
+        model_path = os.path.join(project_root, "models", "whisper-cpp", "ggml-model.bin")
+        
+        if not os.path.exists(model_path):
+             print(f"Warning: Local model not found at {model_path}. pywhispercpp might try to download or fail.", flush=True)
+             # Fallback logic or just pass model_size to let pywhispercpp handle it (it downloads to its own cache)
+             # But since we want to use our manually converted/downloaded model:
+             self.model = Model(model_size, print_realtime=False, print_progress=False)
+        else:
+             print(f"Loading Whisper model from '{model_path}'...", flush=True)
+             self.model = Model(model_path, print_realtime=False, print_progress=False)
+             
         print("Model loaded.", flush=True)
 
     def transcribe(self, audio_data):
@@ -20,7 +36,7 @@ class AudioTranscriber:
         if audio_data.ndim > 1:
             audio_data = audio_data.flatten()
 
-        # openai-whisper expects float32 audio
+        # pywhispercpp expects float32 audio
         if audio_data.dtype != np.float32:
             audio_data = audio_data.astype(np.float32)
 
@@ -33,11 +49,16 @@ class AudioTranscriber:
             if max_val < 0.5:
                 audio_data = audio_data / max_val * 0.5
 
-        # openai-whisper transcribe
-        # fp16=False for CPU to avoid warnings/errors if not supported
-        result = self.model.transcribe(audio_data, fp16=False)
-        
-        return result["text"].strip()
+        # pywhispercpp transcribe returns a list of segments
+        try:
+            segments = self.model.transcribe(audio_data)
+            text = []
+            for segment in segments:
+                text.append(segment.text)
+            return "".join(text).strip()
+        except Exception as e:
+            print(f"Transcription error: {e}", flush=True)
+            return ""
 
 if __name__ == "__main__":
     # Test the transcriber (needs a dummy audio or real one)

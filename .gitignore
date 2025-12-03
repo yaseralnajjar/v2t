@@ -1,15 +1,13 @@
-# Python-generated files
 __pycache__/
-*.py[oc]
-build/
+*.py[cod]
+*$py.class
+.venv/
+.idea/
+.vscode/
+*.DS_Store
 dist/
-w# Whisper models cache
-~/.cache/huggingface/
-
-# PyInstaller build artifacts
 build/
-dist/
-*.speco
-
-# Virtual environments
-.venv
+*.spec
+models/
+whisper_cpp_repo/
+test_*.py
