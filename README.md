@@ -5,9 +5,11 @@ A macOS application that captures microphone input, transcribes speech using a l
 ## Features
 
 - **Hotkey Control**: Press **Right Command** to toggle recording (Start/Stop)
-- **Local Transcription**: Uses `pywhispercpp` with the `small.en` model for high-accuracy offline speech-to-text.
-- **Automatic Text Injection**: Types transcribed text directly into any focused text field using AppleScript (macOS native).
-- **Privacy-First**: All processing happens locally on your Mac.
+- **Audio Feedback**: Distinct tones when recording starts/stops
+- **Local Transcription**: Uses `pywhispercpp` with configurable Whisper models for offline speech-to-text
+- **Automatic Text Injection**: Types transcribed text directly into any focused text field using AppleScript (macOS native)
+- **Privacy-First**: All processing happens locally on your Mac
+- **Startup Info**: Shows selected audio input device and model on launch
 
 ## Installation
 
@@ -41,9 +43,9 @@ A macOS application that captures microphone input, transcribes speech using a l
    ```bash
    # Using the launcher
    ./start.sh
-   
-   # OR directly with uv
-   uv run python main.py
+
+   # OR directly with uv (from the project directory)
+   uv run python ./main.py
    ```
 
 ## Permissions
@@ -54,6 +56,40 @@ The app requires the following macOS permissions:
 2. **Accessibility Access**: Required for input monitoring (hotkeys) and text injection.
    - Go to **System Settings** > **Privacy & Security** > **Accessibility**
    - Add/Enable your Terminal app (e.g., iTerm, Terminal, VS Code)
+
+## Configuration
+
+You can configure the Whisper model using the `V2T_MODEL` environment variable:
+
+```bash
+# Use a different model size
+V2T_MODEL=tiny.en ./start.sh
+V2T_MODEL=medium.en ./start.sh
+V2T_MODEL=large-v3-turbo ./start.sh
+
+# Or use a custom model path
+V2T_MODEL=/path/to/your/model.bin ./start.sh
+
+# With uv run directly
+V2T_MODEL=large-v3 uv run python ./main.py
+
+# Export for the session
+export V2T_MODEL=medium.en
+./start.sh
+```
+
+Available models:
+
+| Model | Size | Speed | Best for |
+|-------|------|-------|----------|
+| `tiny.en` | 39M | Fastest | Quick drafts, low latency |
+| `base.en` | 74M | Fast | Good balance for English |
+| `small.en` | 244M | Moderate | **Default** - accurate English |
+| `medium.en` | 769M | Slow | High accuracy English |
+| `large-v3` | 1.5G | Slowest | Multilingual, accents |
+| `large-v3-turbo` | 1.5G | Slow | Faster large model |
+
+The `.en` models are English-only but faster and more accurate for English speech.
 
 ## Usage
 

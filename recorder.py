@@ -11,6 +11,14 @@ class AudioRecorder:
         self.recording = False
         self.stream = None
 
+    def get_input_device_info(self):
+        """Get information about the current default input device."""
+        try:
+            device_info = sd.query_devices(kind='input')
+            return device_info['name']
+        except Exception as e:
+            return f"Unknown (error: {e})"
+
     def _callback(self, indata, frames, time, status):
         """This is called (from a separate thread) for each audio block."""
         if status:

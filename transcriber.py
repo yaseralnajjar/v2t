@@ -1,28 +1,32 @@
 from pywhispercpp.model import Model
 import numpy as np
 import os
+import config
 
 class AudioTranscriber:
-    def __init__(self, model_size="base.en", device="cpu"):
-        # device param is kept for compatibility but pywhispercpp handles backend selection automatically (e.g. Metal on Mac)
-        # We construct the local model path assuming it's relative to the project root or in a known location
-        # Adjust the path as per your project structure. Here assuming 'models/whisper-cpp/ggml-model.bin'
-        # exists for the 'base.en' model. If model_size changes, this path logic needs to be dynamic or configured.
-        
-        # For this specific setup, we are using the converted 'base.en' model located at:
+    def __init__(self):
+        self.model_name = config.MODEL
         project_root = os.path.dirname(os.path.abspath(__file__))
-        model_path = os.path.join(project_root, "models", "whisper-cpp", "ggml-model.bin")
-        
-        if not os.path.exists(model_path):
-             print(f"Warning: Local model not found at {model_path}. pywhispercpp might try to download or fail.", flush=True)
-             # Fallback logic or just pass model_size to let pywhispercpp handle it (it downloads to its own cache)
-             # But since we want to use our manually converted/downloaded model:
-             self.model = Model(model_size, print_realtime=False, print_progress=False)
+
+        # Check if MODEL is a full path to a file
+        if os.path.isfile(self.model_name):
+            model_path = self.model_name
         else:
-             print(f"Loading Whisper model from '{model_path}'...", flush=True)
-             self.model = Model(model_path, print_realtime=False, print_progress=False)
-             
+            # Look for local model in models/whisper-cpp/
+            model_path = os.path.join(project_root, "models", "whisper-cpp", "ggml-model.bin")
+
+        if os.path.exists(model_path):
+            print(f"Loading Whisper model from '{model_path}'...", flush=True)
+            self.model = Model(model_path, print_realtime=False, print_progress=False, redirect_whispercpp_logs_to=None)
+        else:
+            print(f"Downloading Whisper model '{self.model_name}'...", flush=True)
+            self.model = Model(self.model_name, print_realtime=False, print_progress=False, redirect_whispercpp_logs_to=None)
+
         print("Model loaded.", flush=True)
+
+    def get_model_name(self):
+        """Return the configured model name."""
+        return self.model_name
 
     def transcribe(self, audio_data):
         """

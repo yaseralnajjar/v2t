@@ -6,6 +6,7 @@ import sys
 from recorder import AudioRecorder
 from transcriber import AudioTranscriber
 from injector import TextInjector
+from sounds import play_start_sound, play_stop_sound
 
 class VoiceToTextApp:
     def __init__(self):
@@ -36,11 +37,13 @@ class VoiceToTextApp:
 
     def start_recording(self):
         print("Hotkey pressed! Starting recording...", flush=True)
+        play_start_sound()
         self.is_recording = True
         self.recorder.start()
 
     def stop_recording_and_transcribe(self):
         print("Hotkey released! Stopping recording...", flush=True)
+        play_stop_sound()
         self.is_recording = False
         audio_data = self.recorder.stop()
         
@@ -67,6 +70,8 @@ class VoiceToTextApp:
 
     def run(self):
         print("Voice-to-Text App Running...")
+        print(f"Model: {self.transcriber.get_model_name()}")
+        print(f"Audio input: {self.recorder.get_input_device_info()}")
         print("Press Right Command to toggle recording (Start/Stop).")
         print("Press Ctrl+C to exit.")
         
