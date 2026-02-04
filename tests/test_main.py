@@ -3,6 +3,7 @@
 import threading
 import signal
 import time
+import os
 from unittest.mock import Mock, patch, MagicMock
 import numpy as np
 import pytest
@@ -49,9 +50,56 @@ class TestVoiceToTextAppInit:
 
         assert keyboard.Key.cmd_r in app.HOTKEY
 
+    @patch('main.AudioRecorder')
+    @patch('main.AudioTranscriber')
+    @patch('main.TextInjector')
+    def test_init_default_mode_is_toggle(self, mock_injector, mock_transcriber, mock_recorder):
+        """Test that default mode is toggle."""
+        from main import VoiceToTextApp
+
+        app = VoiceToTextApp()
+
+        assert app.mode == "toggle"
+
+    @patch.dict(os.environ, {"V2T_MODE": "push_to_talk"})
+    @patch('main.AudioRecorder')
+    @patch('main.AudioTranscriber')
+    @patch('main.TextInjector')
+    def test_init_push_to_talk_mode(self, mock_injector, mock_transcriber, mock_recorder):
+        """Test that V2T_MODE=push_to_talk sets push_to_talk mode."""
+        from main import VoiceToTextApp
+
+        app = VoiceToTextApp()
+
+        assert app.mode == "push_to_talk"
+
+    @patch.dict(os.environ, {"V2T_MODE": "ptt"})
+    @patch('main.AudioRecorder')
+    @patch('main.AudioTranscriber')
+    @patch('main.TextInjector')
+    def test_init_ptt_alias(self, mock_injector, mock_transcriber, mock_recorder):
+        """Test that V2T_MODE=ptt is alias for push_to_talk."""
+        from main import VoiceToTextApp
+
+        app = VoiceToTextApp()
+
+        assert app.mode == "push_to_talk"
+
+    @patch.dict(os.environ, {"V2T_MODE": "invalid"})
+    @patch('main.AudioRecorder')
+    @patch('main.AudioTranscriber')
+    @patch('main.TextInjector')
+    def test_init_invalid_mode_falls_back_to_toggle(self, mock_injector, mock_transcriber, mock_recorder):
+        """Test that invalid V2T_MODE falls back to toggle."""
+        from main import VoiceToTextApp
+
+        app = VoiceToTextApp()
+
+        assert app.mode == "toggle"
+
 
 class TestVoiceToTextAppShutdown:
-    """Tests for the shutdown mechanism (main feature of this branch)."""
+    """Tests for the shutdown mechanism."""
 
     @patch('main.AudioRecorder')
     @patch('main.AudioTranscriber')
@@ -226,8 +274,8 @@ class TestVoiceToTextAppRecording:
         app.transcriber.transcribe.assert_not_called()
 
 
-class TestVoiceToTextAppHotkeyHandling:
-    """Tests for hotkey press/release handling."""
+class TestToggleModeHotkeyHandling:
+    """Tests for hotkey handling in toggle mode (default)."""
 
     @patch('main.AudioRecorder')
     @patch('main.AudioTranscriber')
@@ -241,6 +289,7 @@ class TestVoiceToTextAppHotkeyHandling:
         from pynput import keyboard
 
         app = VoiceToTextApp()
+        assert app.mode == "toggle"
         assert app.is_recording is False
 
         app.on_press(keyboard.Key.cmd_r)
@@ -255,7 +304,7 @@ class TestVoiceToTextAppHotkeyHandling:
     def test_on_press_hotkey_stops_recording_when_recording(
         self, mock_play_stop, mock_play_start, mock_injector, mock_transcriber, mock_recorder
     ):
-        """Test that pressing hotkey when recording stops recording."""
+        """Test that pressing hotkey when recording stops recording (toggle mode)."""
         from main import VoiceToTextApp
         from pynput import keyboard
 
@@ -282,6 +331,160 @@ class TestVoiceToTextAppHotkeyHandling:
 
         assert app.is_recording is False
         app.recorder.start.assert_not_called()
+
+    @patch('main.AudioRecorder')
+    @patch('main.AudioTranscriber')
+    @patch('main.TextInjector')
+    @patch('main.play_start_sound')
+    def test_on_release_does_nothing_in_toggle_mode(
+        self, mock_play_start, mock_injector, mock_transcriber, mock_recorder
+    ):
+        """Test that releasing hotkey does nothing in toggle mode."""
+        from main import VoiceToTextApp
+        from pynput import keyboard
+
+        app = VoiceToTextApp()
+        app.on_press(keyboard.Key.cmd_r)
+        assert app.is_recording is True
+
+        app.on_release(keyboard.Key.cmd_r)
+
+        # Still recording - release doesn't stop in toggle mode
+        assert app.is_recording is True
+
+
+class TestPushToTalkModeHotkeyHandling:
+    """Tests for hotkey handling in push-to-talk mode."""
+
+    @patch.dict(os.environ, {"V2T_MODE": "push_to_talk"})
+    @patch('main.AudioRecorder')
+    @patch('main.AudioTranscriber')
+    @patch('main.TextInjector')
+    @patch('main.play_start_sound')
+    def test_on_press_starts_recording(self, mock_play_start, mock_injector, mock_transcriber, mock_recorder):
+        """Test that pressing hotkey starts recording in push-to-talk mode."""
+        from main import VoiceToTextApp
+        from pynput import keyboard
+
+        app = VoiceToTextApp()
+        assert app.mode == "push_to_talk"
+        assert app.is_recording is False
+
+        app.on_press(keyboard.Key.cmd_r)
+
+        assert app.is_recording is True
+        app.recorder.start.assert_called_once()
+
+    @patch.dict(os.environ, {"V2T_MODE": "push_to_talk"})
+    @patch('main.AudioRecorder')
+    @patch('main.AudioTranscriber')
+    @patch('main.TextInjector')
+    @patch('main.play_start_sound')
+    def test_on_press_does_not_restart_if_already_recording(
+        self, mock_play_start, mock_injector, mock_transcriber, mock_recorder
+    ):
+        """Test that pressing hotkey doesn't restart recording if already recording."""
+        from main import VoiceToTextApp
+        from pynput import keyboard
+
+        app = VoiceToTextApp()
+        app.is_recording = True
+        app.recorder.start.reset_mock()
+
+        app.on_press(keyboard.Key.cmd_r)
+
+        assert app.is_recording is True
+        app.recorder.start.assert_not_called()
+
+    @patch.dict(os.environ, {"V2T_MODE": "push_to_talk"})
+    @patch('main.AudioRecorder')
+    @patch('main.AudioTranscriber')
+    @patch('main.TextInjector')
+    @patch('main.play_start_sound')
+    @patch('main.play_stop_sound')
+    def test_on_release_stops_recording(
+        self, mock_play_stop, mock_play_start, mock_injector, mock_transcriber, mock_recorder
+    ):
+        """Test that releasing hotkey stops recording in push-to-talk mode."""
+        from main import VoiceToTextApp
+        from pynput import keyboard
+
+        app = VoiceToTextApp()
+        app.recorder.stop.return_value = np.array([0.1, 0.2])
+
+        app.on_press(keyboard.Key.cmd_r)
+        assert app.is_recording is True
+
+        with patch('main.threading.Thread'):
+            app.on_release(keyboard.Key.cmd_r)
+
+        assert app.is_recording is False
+        app.recorder.stop.assert_called_once()
+
+    @patch.dict(os.environ, {"V2T_MODE": "push_to_talk"})
+    @patch('main.AudioRecorder')
+    @patch('main.AudioTranscriber')
+    @patch('main.TextInjector')
+    def test_on_release_does_nothing_when_not_recording(self, mock_injector, mock_transcriber, mock_recorder):
+        """Test that releasing hotkey does nothing if not recording."""
+        from main import VoiceToTextApp
+        from pynput import keyboard
+
+        app = VoiceToTextApp()
+        assert app.is_recording is False
+
+        app.on_release(keyboard.Key.cmd_r)
+
+        assert app.is_recording is False
+        app.recorder.stop.assert_not_called()
+
+    @patch.dict(os.environ, {"V2T_MODE": "push_to_talk"})
+    @patch('main.AudioRecorder')
+    @patch('main.AudioTranscriber')
+    @patch('main.TextInjector')
+    @patch('main.play_start_sound')
+    def test_on_release_ignores_other_keys(self, mock_play_start, mock_injector, mock_transcriber, mock_recorder):
+        """Test that releasing non-hotkey keys doesn't stop recording."""
+        from main import VoiceToTextApp
+        from pynput import keyboard
+
+        app = VoiceToTextApp()
+        app.on_press(keyboard.Key.cmd_r)
+        assert app.is_recording is True
+
+        app.on_release(keyboard.Key.cmd_l)
+        app.on_release(keyboard.Key.space)
+
+        assert app.is_recording is True
+        app.recorder.stop.assert_not_called()
+
+    @patch.dict(os.environ, {"V2T_MODE": "push_to_talk"})
+    @patch('main.AudioRecorder')
+    @patch('main.AudioTranscriber')
+    @patch('main.TextInjector')
+    @patch('main.play_start_sound')
+    @patch('main.play_stop_sound')
+    def test_full_push_to_talk_cycle(
+        self, mock_play_stop, mock_play_start, mock_injector, mock_transcriber, mock_recorder
+    ):
+        """Test complete push-to-talk cycle: press -> release."""
+        from main import VoiceToTextApp
+        from pynput import keyboard
+
+        app = VoiceToTextApp()
+        app.recorder.stop.return_value = np.array([0.1, 0.2])
+
+        # Press hotkey - should start recording
+        app.on_press(keyboard.Key.cmd_r)
+        assert app.is_recording is True
+        app.recorder.start.assert_called_once()
+
+        # Release hotkey - should stop and transcribe
+        with patch('main.threading.Thread'):
+            app.on_release(keyboard.Key.cmd_r)
+
+        assert app.is_recording is False
+        app.recorder.stop.assert_called_once()
 
 
 class TestProcessAudio:
@@ -345,8 +548,6 @@ class TestProcessAudio:
         app.is_recording = True
         app.recorder.stop.return_value = np.array([0.1, 0.2, 0.3])
 
-        threads_before = threading.enumerate()
-
         with patch('main.threading.Thread') as mock_thread:
             mock_thread_instance = MagicMock()
             mock_thread.return_value = mock_thread_instance
@@ -381,11 +582,7 @@ class TestSignalHandler:
     @patch('main.AudioTranscriber')
     @patch('main.TextInjector')
     def test_sigint_exits_run_loop(self, mock_injector, mock_transcriber, mock_recorder):
-        """Test that SIGINT (Ctrl+C) causes the app to exit gracefully.
-
-        This is the key test for the fix/ctrl-c-hang branch - it verifies that
-        sending SIGINT to the process actually causes run() to exit.
-        """
+        """Test that SIGINT (Ctrl+C) causes the app to exit gracefully."""
         import os
         from main import VoiceToTextApp
 
@@ -393,7 +590,6 @@ class TestSignalHandler:
         app.recorder.get_input_device_info.return_value = "Test Device"
         app.transcriber.get_model_name.return_value = "test.en"
 
-        # Register signal handler the same way __main__ does
         def signal_handler(signum, frame):
             app.shutdown_event.set()
 
@@ -411,10 +607,8 @@ class TestSignalHandler:
                 mock_listener_instance = MagicMock()
                 mock_listener.return_value = mock_listener_instance
 
-                # This should exit when SIGINT is received
                 app.run()
 
-            # If we get here, the signal handler worked
             assert app.shutdown_event.is_set()
             mock_listener_instance.stop.assert_called_once()
         finally:

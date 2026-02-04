@@ -4,6 +4,7 @@ import threading
 import time
 import sys
 import signal
+import os
 from recorder import AudioRecorder
 from transcriber import AudioTranscriber
 from injector import TextInjector
@@ -17,25 +18,34 @@ class VoiceToTextApp:
         self.is_recording = False
         self.shutdown_event = threading.Event()
 
+        # Recording mode: "toggle" or "push_to_talk"
+        # Set via V2T_MODE environment variable (default: toggle)
+        self.mode = os.environ.get("V2T_MODE", "toggle").lower()
+        if self.mode not in ("toggle", "push_to_talk", "ptt"):
+            print(f"Warning: Unknown V2T_MODE '{self.mode}', using 'toggle'")
+            self.mode = "toggle"
+        if self.mode == "ptt":
+            self.mode = "push_to_talk"
+
         # Hotkey configuration: Right Command
         self.HOTKEY = {keyboard.Key.cmd_r}
         self.current_keys = set()
 
     def on_press(self, key):
         if key in self.HOTKEY:
-            # Toggle logic
-            if self.is_recording:
-                self.stop_recording_and_transcribe()
-            else:
-                self.start_recording()
+            if self.mode == "toggle":
+                if self.is_recording:
+                    self.stop_recording_and_transcribe()
+                else:
+                    self.start_recording()
+            else:  # push_to_talk
+                if not self.is_recording:
+                    self.start_recording()
 
     def on_release(self, key):
-        # No action on release for toggle mode
-        
-        if key == keyboard.Key.esc:
-            # Optional: Exit app on ESC? Or maybe just keep running.
-            # Let's keep running, but maybe print a message.
-            pass
+        if key in self.HOTKEY:
+            if self.mode == "push_to_talk" and self.is_recording:
+                self.stop_recording_and_transcribe()
 
     def start_recording(self):
         print("Hotkey pressed! Starting recording...", flush=True)
@@ -48,14 +58,14 @@ class VoiceToTextApp:
         play_stop_sound()
         self.is_recording = False
         audio_data = self.recorder.stop()
-        
+
         if len(audio_data) == 0:
             print("No audio recorded.", flush=True)
             return
 
         print("Transcribing...", flush=True)
         # Run transcription in a separate thread to not block the listener?
-        # Actually, we want to block or at least process it. 
+        # Actually, we want to block or at least process it.
         # Since we are in the listener callback, we should be careful not to block it for too long if we want to detect other keys.
         # But for this simple app, blocking the listener might be okay, or we can offload to a thread.
         # Let's offload to a thread to keep the UI/Hotkey responsive.
@@ -74,7 +84,11 @@ class VoiceToTextApp:
         print("Voice-to-Text App Running...")
         print(f"Model: {self.transcriber.get_model_name()}")
         print(f"Audio input: {self.recorder.get_input_device_info()}")
-        print("Press Right Command to toggle recording (Start/Stop).")
+        print(f"Mode: {self.mode}")
+        if self.mode == "toggle":
+            print("Press Right Command to toggle recording (Start/Stop).")
+        else:
+            print("Hold Right Command to record, release to transcribe.")
         print("Press Ctrl+C to exit.")
 
         listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
