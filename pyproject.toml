@@ -16,4 +16,5 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pyinstaller>=6.17.0",
+    "pytest>=8.0.0",
 ]

@@ -3,6 +3,7 @@ import numpy as np
 import threading
 import time
 import sys
+import signal
 from recorder import AudioRecorder
 from transcriber import AudioTranscriber
 from injector import TextInjector
@@ -14,7 +15,8 @@ class VoiceToTextApp:
         self.transcriber = AudioTranscriber()
         self.injector = TextInjector()
         self.is_recording = False
-        
+        self.shutdown_event = threading.Event()
+
         # Hotkey configuration: Right Command
         self.HOTKEY = {keyboard.Key.cmd_r}
         self.current_keys = set()
@@ -57,7 +59,7 @@ class VoiceToTextApp:
         # Since we are in the listener callback, we should be careful not to block it for too long if we want to detect other keys.
         # But for this simple app, blocking the listener might be okay, or we can offload to a thread.
         # Let's offload to a thread to keep the UI/Hotkey responsive.
-        threading.Thread(target=self._process_audio, args=(audio_data,)).start()
+        threading.Thread(target=self._process_audio, args=(audio_data,), daemon=True).start()
 
     def _process_audio(self, audio_data):
         try:
@@ -74,13 +76,25 @@ class VoiceToTextApp:
         print(f"Audio input: {self.recorder.get_input_device_info()}")
         print("Press Right Command to toggle recording (Start/Stop).")
         print("Press Ctrl+C to exit.")
-        
-        with keyboard.Listener(on_press=self.on_press, on_release=self.on_release) as listener:
-            listener.join()
+
+        listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
+        listener.start()
+
+        try:
+            while not self.shutdown_event.is_set():
+                time.sleep(0.1)
+        finally:
+            listener.stop()
+            if self.is_recording:
+                self.recorder.stop()
 
 if __name__ == "__main__":
-    try:
-        app = VoiceToTextApp()
-        app.run()
-    except KeyboardInterrupt:
-        print("\nExiting...")
+    app = VoiceToTextApp()
+
+    def signal_handler(signum, frame):
+        app.shutdown_event.set()
+
+    signal.signal(signal.SIGINT, signal_handler)
+
+    app.run()
+    print("Exiting...")

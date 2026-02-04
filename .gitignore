@@ -10,4 +10,3 @@ build/
 *.spec
 models/
 whisper_cpp_repo/
-test_*.py
