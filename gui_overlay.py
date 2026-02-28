@@ -1,6 +1,153 @@
 import math
 import queue
-import tkinter as tk
+import sys
+from ctypes import c_void_p
+
+from PySide6.QtCore import QRectF, Qt, QTimer
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QWidget
+
+
+class _PillWindow(QWidget):
+    def __init__(self, overlay):
+        super().__init__()
+        self.overlay = overlay
+        self.setFixedSize(
+            self.overlay._pill_width + (2 * self.overlay._pill_pad),
+            self.overlay._pill_height + (2 * self.overlay._pill_pad),
+        )
+        self.setWindowFlags(
+            Qt.Tool
+            | Qt.FramelessWindowHint
+            | Qt.WindowStaysOnTopHint
+            | Qt.WindowDoesNotAcceptFocus
+            | Qt.NoDropShadowWindowHint
+        )
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        if hasattr(Qt, "WA_MacAlwaysShowToolWindow"):
+            self.setAttribute(Qt.WA_MacAlwaysShowToolWindow, True)
+        self.setFocusPolicy(Qt.NoFocus)
+
+    def enterEvent(self, event):
+        self.overlay._on_pill_enter()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.overlay._on_pill_leave()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        x1 = float(self.overlay._pill_pad)
+        y1 = float(self.overlay._pill_pad)
+        w = float(self.overlay._pill_width)
+        h = float(self.overlay._pill_height)
+        radius = h / 2.0
+
+        fill, border, bar_color, heights = self.overlay._render_params()
+
+        rect = QRectF(x1, y1, w, h)
+        path = QPainterPath()
+        path.addRoundedRect(rect, radius, radius)
+
+        painter.fillPath(path, QColor(fill))
+        pen = QPen(QColor(border))
+        pen.setWidth(2)
+        painter.setPen(pen)
+        painter.drawPath(path)
+
+        inner_pad = 20.0
+        usable_w = w - (2.0 * inner_pad)
+        if usable_w <= 0.0 or not heights:
+            return
+
+        center_y = y1 + (h / 2.0)
+        max_h = h * 0.36
+        step = usable_w / (len(heights) + 1)
+        bar_w = max(2.0, step * 0.36)
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(bar_color))
+
+        for index, height in enumerate(heights):
+            px = x1 + inner_pad + ((index + 1) * step)
+            bar_h = max(2.0, max_h * height)
+            bar_rect = QRectF(
+                px - (bar_w / 2.0),
+                center_y - (bar_h / 2.0),
+                bar_w,
+                bar_h,
+            )
+            painter.drawRect(bar_rect)
+
+
+class _TipWindow(QWidget):
+    def __init__(self, overlay, left_text, key_text, right_text):
+        super().__init__()
+        self.overlay = overlay
+
+        self.setWindowFlags(
+            Qt.Tool
+            | Qt.FramelessWindowHint
+            | Qt.WindowStaysOnTopHint
+            | Qt.WindowDoesNotAcceptFocus
+            | Qt.NoDropShadowWindowHint
+        )
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        if hasattr(Qt, "WA_MacAlwaysShowToolWindow"):
+            self.setAttribute(Qt.WA_MacAlwaysShowToolWindow, True)
+        self.setFocusPolicy(Qt.NoFocus)
+
+        self.setStyleSheet(
+            "QWidget {"
+            "background-color: #000000;"
+            "border: 2px solid #545454;"
+            "border-radius: 26px;"
+            "}"
+            "QLabel {"
+            "background: transparent;"
+            "border: none;"
+            "}"
+        )
+
+        layout = QHBoxLayout()
+        layout.setContentsMargins(22, 12, 22, 12)
+        layout.setSpacing(0)
+
+        base_font = QFont("Helvetica", 20)
+        bold_font = QFont("Helvetica", 20)
+        bold_font.setBold(True)
+
+        left = QLabel(left_text)
+        left.setFont(base_font)
+        left.setStyleSheet("color: #f2f2f2;")
+        layout.addWidget(left)
+
+        key = QLabel(key_text)
+        key.setFont(bold_font)
+        key.setStyleSheet("color: #f38fd7;")
+        layout.addWidget(key)
+
+        right = QLabel(right_text)
+        right.setFont(base_font)
+        right.setStyleSheet("color: #f2f2f2;")
+        layout.addWidget(right)
+
+        self.setLayout(layout)
+
+    def enterEvent(self, event):
+        self.overlay._on_tip_enter()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.overlay._on_tip_leave()
+        super().leaveEvent(event)
 
 
 class FloatingOverlay:
@@ -27,62 +174,21 @@ class FloatingOverlay:
         self._pill_height = 30
         self._pill_pad = 8
 
-        self.root = tk.Tk()
-        self.root.withdraw()
-        self.root.overrideredirect(True)
-        self.root.attributes("-topmost", True)
-        self.root.configure(bg="#dfdfdf")
+        self._app = QApplication.instance()
+        self._owns_app = self._app is None
+        if self._app is None:
+            self._app = QApplication([])
 
-        window_w = self._pill_width + (2 * self._pill_pad)
-        window_h = self._pill_height + (2 * self._pill_pad)
-        self.canvas = tk.Canvas(
-            self.root,
-            width=window_w,
-            height=window_h,
-            bg="#dfdfdf",
-            highlightthickness=0,
-            bd=0,
-        )
-        self.canvas.pack()
-
-        self._tip = tk.Toplevel(self.root)
-        self._tip.withdraw()
-        self._tip.overrideredirect(True)
-        self._tip.attributes("-topmost", True)
-        self._tip.configure(bg="#000000")
-
-        tip_frame = tk.Frame(self._tip, bg="#000000", padx=18, pady=12)
-        tip_frame.pack()
-
+        self._pill = _PillWindow(self)
         left_text, key_text, right_text = self._hint_parts()
-        tk.Label(
-            tip_frame,
-            text=left_text,
-            fg="#f2f2f2",
-            bg="#000000",
-            font=("Helvetica", 20, "normal"),
-        ).pack(side="left")
-        tk.Label(
-            tip_frame,
-            text=key_text,
-            fg="#f38fd7",
-            bg="#000000",
-            font=("Helvetica", 20, "bold"),
-        ).pack(side="left")
-        tk.Label(
-            tip_frame,
-            text=right_text,
-            fg="#f2f2f2",
-            bg="#000000",
-            font=("Helvetica", 20, "normal"),
-        ).pack(side="left")
+        self._tip = _TipWindow(self, left_text, key_text, right_text)
+        self._tip.hide()
 
-        for widget in (self.root, self.canvas):
-            widget.bind("<Enter>", self._on_pill_enter)
-            widget.bind("<Leave>", self._on_pill_leave)
+        self._tick_timer = QTimer()
+        self._tick_timer.timeout.connect(self._tick)
 
-        self._tip.bind("<Enter>", self._on_tip_enter)
-        self._tip.bind("<Leave>", self._on_tip_leave)
+        self._shutdown_timer = QTimer()
+        self._shutdown_timer.timeout.connect(self._watch_shutdown)
 
     def _hint_parts(self):
         if self.mode == "toggle":
@@ -98,52 +204,54 @@ class FloatingOverlay:
         self._shutdown_event = shutdown_event
 
         self._position_pill()
-        self.root.deiconify()
-        self._render()
-        self._tick()
-        self._watch_shutdown()
-        self.root.mainloop()
+        self._pill.show()
+        self._pill.raise_()
+        self._apply_native_window_hints(self._pill)
+        self._apply_native_window_hints(self._tip)
+        self._tick_timer.start(50)
+        self._shutdown_timer.start(100)
+
+        if self._owns_app:
+            self._app.exec()
 
     def close(self):
-        if not self._running:
+        if not self._running and not self._pill.isVisible() and not self._tip.isVisible():
             return
 
         self._running = False
-        try:
-            self._tip.withdraw()
-            self._tip.destroy()
-        except tk.TclError:
-            pass
+        self._tick_timer.stop()
+        self._shutdown_timer.stop()
 
-        try:
-            self.root.quit()
-            self.root.destroy()
-        except tk.TclError:
-            pass
+        self._tip.hide()
+        self._pill.hide()
+
+        self._tip.close()
+        self._pill.close()
+
+        if self._owns_app:
+            self._app.quit()
 
     def _watch_shutdown(self):
         if not self._running:
             return
         if self._shutdown_event.is_set():
             self.close()
-            return
-        self.root.after(100, self._watch_shutdown)
 
-    def _on_pill_enter(self, _event):
+    def _on_pill_enter(self):
         self._hovering_pill = True
         self._update_tip_visibility()
 
-    def _on_pill_leave(self, _event):
+    def _on_pill_leave(self):
         self._hovering_pill = False
-        self.root.after(60, self._update_tip_visibility)
+        QTimer.singleShot(60, self._update_tip_visibility)
 
-    def _on_tip_enter(self, _event):
+    def _on_tip_enter(self):
         self._hovering_tip = True
         self._update_tip_visibility()
 
-    def _on_tip_leave(self, _event):
+    def _on_tip_leave(self):
         self._hovering_tip = False
-        self.root.after(60, self._update_tip_visibility)
+        QTimer.singleShot(60, self._update_tip_visibility)
 
     def _update_tip_visibility(self):
         if not self._running:
@@ -152,32 +260,29 @@ class FloatingOverlay:
         should_show = (self._hovering_pill or self._hovering_tip) and self.state == self.STATE_IDLE
         if should_show:
             self._position_tip()
-            self._tip.deiconify()
+            self._tip.show()
+            self._tip.raise_()
+            self._apply_native_window_hints(self._tip)
         else:
-            self._tip.withdraw()
+            self._tip.hide()
+
+    def _screen_geometry(self):
+        screen = self._pill.screen() or self._app.primaryScreen()
+        return screen.geometry()
 
     def _position_pill(self):
-        screen_w = self.root.winfo_screenwidth()
-        screen_h = self.root.winfo_screenheight()
-        window_w = int(self.canvas["width"])
-        window_h = int(self.canvas["height"])
-
-        x = int((screen_w - window_w) / 2)
-        y = int(screen_h - window_h - 56)
-        self.root.geometry(f"{window_w}x{window_h}+{x}+{y}")
+        geometry = self._screen_geometry()
+        x = int(geometry.x() + ((geometry.width() - self._pill.width()) / 2))
+        y = int(geometry.y() + geometry.height() - self._pill.height() - 56)
+        self._pill.move(x, y)
 
     def _position_tip(self):
-        self._tip.update_idletasks()
+        self._tip.adjustSize()
 
-        screen_w = self.root.winfo_screenwidth()
-        pill_y = self.root.winfo_y()
-
-        tip_w = self._tip.winfo_reqwidth()
-        tip_h = self._tip.winfo_reqheight()
-
-        x = int((screen_w - tip_w) / 2)
-        y = int(pill_y - tip_h - 10)
-        self._tip.geometry(f"{tip_w}x{tip_h}+{x}+{y}")
+        geometry = self._screen_geometry()
+        x = int(geometry.x() + ((geometry.width() - self._tip.width()) / 2))
+        y = int(self._pill.y() - self._tip.height() - 10)
+        self._tip.move(x, y)
 
     def _tick(self):
         if not self._running:
@@ -191,12 +296,38 @@ class FloatingOverlay:
             self.state = new_state
             self._update_tip_visibility()
 
-        self._render()
-        self.root.after(50, self._tick)
+        self._pill.update()
 
-    def _render(self):
-        self.canvas.delete("all")
+    def _apply_native_window_hints(self, widget):
+        if sys.platform != "darwin":
+            return
 
+        try:
+            import objc
+            from AppKit import (
+                NSFloatingWindowLevel,
+                NSWindowCollectionBehaviorCanJoinAllSpaces,
+                NSWindowCollectionBehaviorFullScreenAuxiliary,
+            )
+        except Exception:
+            return
+
+        try:
+            native_view = objc.objc_object(c_void_p=int(widget.winId()))
+            native_window = native_view.window()
+            if native_window is None:
+                return
+            native_window.setLevel_(NSFloatingWindowLevel)
+            behavior = (
+                NSWindowCollectionBehaviorCanJoinAllSpaces
+                | NSWindowCollectionBehaviorFullScreenAuxiliary
+            )
+            native_window.setCollectionBehavior_(behavior)
+        except Exception:
+            # Fall back to Qt-only behavior if native hooks are unavailable.
+            return
+
+    def _render_params(self):
         if self.state == self.STATE_IDLE:
             fill = "#7f7f7f"
             border = "#c8c8c8"
@@ -213,48 +344,7 @@ class FloatingOverlay:
             heights = self._recording_heights()
             bar_color = "#f0f0f0"
 
-        x1 = self._pill_pad
-        y1 = self._pill_pad
-        x2 = x1 + self._pill_width
-        y2 = y1 + self._pill_height
-        radius = self._pill_height / 2
-
-        self._draw_rounded_pill(x1, y1, x2, y2, radius, fill, border)
-        self._draw_bars(x1, y1, x2, y2, heights, bar_color)
-
-    def _draw_rounded_pill(self, x1, y1, x2, y2, radius, fill, border):
-        self.canvas.create_rectangle(x1 + radius, y1, x2 - radius, y2, fill=fill, outline=border, width=2)
-        self.canvas.create_oval(x1, y1, x1 + (2 * radius), y2, fill=fill, outline=border, width=2)
-        self.canvas.create_oval(x2 - (2 * radius), y1, x2, y2, fill=fill, outline=border, width=2)
-
-    def _draw_bars(self, x1, y1, x2, y2, heights, color):
-        inner_pad = 20
-        usable_w = (x2 - x1) - (2 * inner_pad)
-        center_y = y1 + ((y2 - y1) / 2)
-        max_h = (y2 - y1) * 0.36
-
-        if usable_w <= 0:
-            return
-
-        count = len(heights)
-        if count == 0:
-            return
-
-        step = usable_w / (count + 1)
-        bar_w = max(2, int(step * 0.36))
-
-        for index, height in enumerate(heights):
-            px = x1 + inner_pad + ((index + 1) * step)
-            h = max(2.0, max_h * height)
-            self.canvas.create_rectangle(
-                px - (bar_w / 2),
-                center_y - (h / 2),
-                px + (bar_w / 2),
-                center_y + (h / 2),
-                fill=color,
-                outline=color,
-                width=0,
-            )
+        return fill, border, bar_color, heights
 
     def _recording_heights(self):
         try:
