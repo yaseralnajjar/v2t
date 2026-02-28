@@ -20,33 +20,64 @@ class VoiceToTextApp:
         self.shutdown_event = threading.Event()
 
         # Recording mode: "toggle" or "push_to_talk"
-        # Set via V2T_MODE environment variable (default: toggle)
-        self.mode = os.environ.get("V2T_MODE", "toggle").lower()
+        # Set via V2T_MODE environment variable (default: push_to_talk)
+        self.mode = os.environ.get("V2T_MODE", "push_to_talk").lower()
         if self.mode not in ("toggle", "push_to_talk", "ptt"):
-            print(f"Warning: Unknown V2T_MODE '{self.mode}', using 'toggle'")
-            self.mode = "toggle"
+            print(f"Warning: Unknown V2T_MODE '{self.mode}', using 'push_to_talk'")
+            self.mode = "push_to_talk"
         if self.mode == "ptt":
             self.mode = "push_to_talk"
 
-        # Hotkey configuration: Right Command
+        # Hotkey configuration: Right Command only.
         self.HOTKEY = {keyboard.Key.cmd_r}
-        self.current_keys = set()
+        self.hotkey_down = set()
+
+    def _is_hotkey(self, key):
+        if key in self.HOTKEY:
+            return True
+        # Match Right Command by virtual key as an extra guard.
+        value = getattr(key, "value", None)
+        vk = getattr(value, "vk", None)
+        return vk == 54
+
+    def _key_id(self, key):
+        value = getattr(key, "value", None)
+        return getattr(value, "vk", key)
 
     def on_press(self, key):
-        if key in self.HOTKEY:
-            if self.mode == "toggle":
-                if self.is_recording:
-                    self.stop_recording_and_transcribe()
-                else:
-                    self.start_recording()
-            else:  # push_to_talk
-                if not self.is_recording:
-                    self.start_recording()
+        if not self._is_hotkey(key):
+            return
+
+        key_id = self._key_id(key)
+        already_held = bool(self.hotkey_down)
+        self.hotkey_down.add(key_id)
+
+        # Ignore duplicate press callbacks while the hotkey is already held.
+        if already_held:
+            return
+
+        if self.mode == "toggle":
+            if self.is_recording:
+                self.stop_recording_and_transcribe()
+            else:
+                self.start_recording()
+        else:  # push_to_talk
+            if not self.is_recording:
+                self.start_recording()
 
     def on_release(self, key):
-        if key in self.HOTKEY:
-            if self.mode == "push_to_talk" and self.is_recording:
-                self.stop_recording_and_transcribe()
+        if not self._is_hotkey(key):
+            return
+
+        key_id = self._key_id(key)
+        self.hotkey_down.discard(key_id)
+
+        # Only stop when all hotkey variants are released.
+        if self.hotkey_down:
+            return
+
+        if self.mode == "push_to_talk" and self.is_recording:
+            self.stop_recording_and_transcribe()
 
     def start_recording(self):
         print("Hotkey pressed! Starting recording...", flush=True)

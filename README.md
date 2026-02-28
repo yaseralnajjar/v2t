@@ -96,6 +96,23 @@ Available models:
 
 The `.en` models are English-only but faster and more accurate for English speech.
 
+### Recording Mode
+
+You can configure recording behavior with `V2T_MODE`:
+
+```bash
+# Default: push-to-talk mode (hold to record, release to transcribe)
+./start.sh
+
+# Push-to-talk mode (hold to record, release to transcribe)
+V2T_MODE=push_to_talk ./start.sh
+# Alias:
+V2T_MODE=ptt ./start.sh
+
+# Explicit toggle mode (press once to start, press again to stop)
+V2T_MODE=toggle ./start.sh
+```
+
 ### Sound Type
 
 You can configure the audio feedback sounds using the `V2T_SOUND` environment variable:

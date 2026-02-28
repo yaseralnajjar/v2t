@@ -49,17 +49,18 @@ class TestVoiceToTextAppInit:
         app = VoiceToTextApp()
 
         assert keyboard.Key.cmd_r in app.HOTKEY
+        assert keyboard.Key.cmd not in app.HOTKEY
 
     @patch('main.AudioRecorder')
     @patch('main.AudioTranscriber')
     @patch('main.TextInjector')
-    def test_init_default_mode_is_toggle(self, mock_injector, mock_transcriber, mock_recorder):
-        """Test that default mode is toggle."""
+    def test_init_default_mode_is_push_to_talk(self, mock_injector, mock_transcriber, mock_recorder):
+        """Test that default mode is push_to_talk."""
         from main import VoiceToTextApp
 
         app = VoiceToTextApp()
 
-        assert app.mode == "toggle"
+        assert app.mode == "push_to_talk"
 
     @patch.dict(os.environ, {"V2T_MODE": "push_to_talk"})
     @patch('main.AudioRecorder')
@@ -89,13 +90,13 @@ class TestVoiceToTextAppInit:
     @patch('main.AudioRecorder')
     @patch('main.AudioTranscriber')
     @patch('main.TextInjector')
-    def test_init_invalid_mode_falls_back_to_toggle(self, mock_injector, mock_transcriber, mock_recorder):
-        """Test that invalid V2T_MODE falls back to toggle."""
+    def test_init_invalid_mode_falls_back_to_push_to_talk(self, mock_injector, mock_transcriber, mock_recorder):
+        """Test that invalid V2T_MODE falls back to push_to_talk."""
         from main import VoiceToTextApp
 
         app = VoiceToTextApp()
 
-        assert app.mode == "toggle"
+        assert app.mode == "push_to_talk"
 
 
 class TestVoiceToTextAppShutdown:
@@ -274,6 +275,7 @@ class TestVoiceToTextAppRecording:
         app.transcriber.transcribe.assert_not_called()
 
 
+@patch.dict(os.environ, {"V2T_MODE": "toggle"})
 class TestToggleModeHotkeyHandling:
     """Tests for hotkey handling in toggle mode (default)."""
 
@@ -314,6 +316,7 @@ class TestToggleModeHotkeyHandling:
         app.on_press(keyboard.Key.cmd_r)
         assert app.is_recording is True
 
+        app.on_release(keyboard.Key.cmd_r)
         app.on_press(keyboard.Key.cmd_r)
         assert app.is_recording is False
 
@@ -351,6 +354,43 @@ class TestToggleModeHotkeyHandling:
 
         # Still recording - release doesn't stop in toggle mode
         assert app.is_recording is True
+
+    @patch('main.AudioRecorder')
+    @patch('main.AudioTranscriber')
+    @patch('main.TextInjector')
+    @patch('main.play_start_sound')
+    def test_on_press_ignores_duplicate_hotkey_callbacks(
+        self, mock_play_start, mock_injector, mock_transcriber, mock_recorder
+    ):
+        """Repeated right-command press callbacks should trigger once per hold."""
+        from main import VoiceToTextApp
+        from pynput import keyboard
+
+        app = VoiceToTextApp()
+
+        app.on_press(keyboard.Key.cmd_r)
+        app.on_press(keyboard.Key.cmd_r)
+
+        assert app.is_recording is True
+        app.recorder.start.assert_called_once()
+
+    @patch('main.AudioRecorder')
+    @patch('main.AudioTranscriber')
+    @patch('main.TextInjector')
+    @patch('main.play_start_sound')
+    def test_on_press_generic_cmd_does_nothing(
+        self, mock_play_start, mock_injector, mock_transcriber, mock_recorder
+    ):
+        """Generic/left command should not trigger hotkey behavior."""
+        from main import VoiceToTextApp
+        from pynput import keyboard
+
+        app = VoiceToTextApp()
+
+        app.on_press(keyboard.Key.cmd)
+
+        assert app.is_recording is False
+        app.recorder.start.assert_not_called()
 
 
 class TestPushToTalkModeHotkeyHandling:
@@ -452,9 +492,33 @@ class TestPushToTalkModeHotkeyHandling:
         app.on_press(keyboard.Key.cmd_r)
         assert app.is_recording is True
 
-        app.on_release(keyboard.Key.cmd_l)
+        app.on_release(keyboard.Key.alt_l)
         app.on_release(keyboard.Key.space)
 
+        assert app.is_recording is True
+        app.recorder.stop.assert_not_called()
+
+    @patch.dict(os.environ, {"V2T_MODE": "push_to_talk"})
+    @patch('main.AudioRecorder')
+    @patch('main.AudioTranscriber')
+    @patch('main.TextInjector')
+    @patch('main.play_start_sound')
+    @patch('main.play_stop_sound')
+    def test_on_release_generic_cmd_does_not_stop_recording(
+        self, mock_play_stop, mock_play_start, mock_injector, mock_transcriber, mock_recorder
+    ):
+        """Releasing generic/left command should not stop right-command recording."""
+        from main import VoiceToTextApp
+        from pynput import keyboard
+
+        app = VoiceToTextApp()
+        app.recorder.stop.return_value = np.array([0.1, 0.2])
+
+        app.on_press(keyboard.Key.cmd_r)
+        assert app.is_recording is True
+
+        # Releasing generic cmd should not stop.
+        app.on_release(keyboard.Key.cmd)
         assert app.is_recording is True
         app.recorder.stop.assert_not_called()
 
