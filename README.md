@@ -72,6 +72,23 @@ If permission was previously denied, macOS may not show the prompt again; grant 
 
 Linux and Windows do not currently perform OS-native permission prompting. On Linux Wayland, global hotkeys and synthetic typing are disabled unless you add a custom backend.
 
+## Native Backend Requirements
+
+The `native` backend modes are platform-specific and depend on external OS APIs or tools:
+
+- **Windows native text injection**: `V2T_INJECT_MODE=native` uses Win32 `SendInput` and does not require extra tools.
+- **Windows native hotkeys**: `V2T_HOTKEY_BACKEND=native` uses `GetAsyncKeyState` polling for **Right Ctrl**.
+- **Linux X11 native text injection**: `V2T_INJECT_MODE=native` requires `xdotool` to be installed and available on `PATH`.
+- **Linux X11 native hotkeys**: `V2T_HOTKEY_BACKEND=native` requires `xinput` to be installed and available on `PATH`.
+- **Linux Wayland**: native hotkey and injection backends are not implemented. Use degraded mode with `V2T_ALLOW_DEGRADED_MODE=1`.
+
+Example Linux packages:
+
+```bash
+# Debian/Ubuntu
+sudo apt-get install xdotool xinput
+```
+
 ## Configuration
 
 You can configure the Whisper model using the `V2T_MODEL` environment variable:
@@ -176,12 +193,13 @@ V2T_LINUX_SESSION=wayland uv run python main.py
 # Choose text injection backend
 V2T_INJECT_MODE=auto ./start.sh
 V2T_INJECT_MODE=pynput ./start.sh
-V2T_INJECT_MODE=native ./start.sh   # Windows only
+V2T_INJECT_MODE=native ./start.sh
 V2T_INJECT_MODE=disabled ./start.sh
 
 # Choose hotkey backend
 V2T_HOTKEY_BACKEND=auto ./start.sh
 V2T_HOTKEY_BACKEND=pynput ./start.sh
+V2T_HOTKEY_BACKEND=native ./start.sh
 V2T_HOTKEY_BACKEND=disabled ./start.sh
 
 # Allow startup without global hotkeys
@@ -191,7 +209,8 @@ V2T_ALLOW_DEGRADED_MODE=1 ./start.sh
 Notes:
 - macOS defaults to the AppleScript injector unless `V2T_INJECT_MODE=pynput` is set.
 - Windows defaults to `pynput`; `V2T_INJECT_MODE=native` enables the `SendInput` path.
-- Linux X11 defaults to `pynput`.
+- Windows `V2T_HOTKEY_BACKEND=native` uses a polling-based `GetAsyncKeyState` backend for **Right Ctrl**.
+- Linux X11 defaults to `pynput`; `V2T_INJECT_MODE=native` requires `xdotool`, and `V2T_HOTKEY_BACKEND=native` requires `xinput`.
 - Linux Wayland and unknown Linux sessions require `V2T_ALLOW_DEGRADED_MODE=1` to continue without hotkeys.
 
 ## Usage
