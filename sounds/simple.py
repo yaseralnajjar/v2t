@@ -1,7 +1,15 @@
 """Simple sine wave tones."""
 
 import numpy as np
-import sounddevice as sd
+
+try:
+    import sounddevice as sd
+except OSError:
+    class _MissingSoundDevice:
+        def play(self, *args, **kwargs):
+            raise OSError("PortAudio library not found")
+
+    sd = _MissingSoundDevice()
 
 from .base import SAMPLE_RATE
 

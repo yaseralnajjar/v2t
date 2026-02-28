@@ -29,14 +29,11 @@ def _get_provider():
     return import_module(f".{module_name}", package=__name__)
 
 
-_provider = _get_provider()
-
-
 def play_start_sound():
     """Play the start/activation sound."""
-    _provider.play_start()
+    _get_provider().play_start()
 
 
 def play_stop_sound():
     """Play the stop/confirmation sound."""
-    _provider.play_stop()
+    _get_provider().play_stop()

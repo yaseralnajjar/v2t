@@ -1,4 +1,4 @@
-"""Unit tests for permissions.py."""
+"""Unit tests for permission backend selection and macOS permissions."""
 
 import os
 import subprocess
@@ -6,11 +6,37 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 
+class TestPermissionFacade:
+    """Tests for permissions.py facade behavior."""
+
+    @patch("permissions.create_permission_manager")
+    def test_request_runtime_permissions_uses_backend_factory(self, mock_create_permission_manager):
+        from permissions import request_runtime_permissions
+
+        manager = MagicMock()
+        manager.preflight.return_value = True
+        mock_create_permission_manager.return_value = manager
+
+        assert request_runtime_permissions() is True
+        manager.preflight.assert_called_once()
+
+    @patch("permissions.create_permission_manager")
+    def test_request_macos_permissions_aliases_runtime_permissions(self, mock_create_permission_manager):
+        from permissions import request_macos_permissions
+
+        manager = MagicMock()
+        manager.preflight.return_value = False
+        mock_create_permission_manager.return_value = manager
+
+        assert request_macos_permissions() is False
+        manager.preflight.assert_called_once()
+
+
 class TestCheckOrRequestEventAccess:
-    """Tests for _check_or_request_event_access helper."""
+    """Tests for macOS event permission helper."""
 
     def test_returns_true_when_already_granted(self):
-        from permissions import _check_or_request_event_access
+        from backends.macos import _check_or_request_event_access
 
         cg = SimpleNamespace(
             CGPreflightListenEventAccess=MagicMock(return_value=True),
@@ -28,7 +54,7 @@ class TestCheckOrRequestEventAccess:
         cg.CGRequestListenEventAccess.assert_not_called()
 
     def test_requests_when_not_granted(self):
-        from permissions import _check_or_request_event_access
+        from backends.macos import _check_or_request_event_access
 
         cg = SimpleNamespace(
             CGPreflightPostEventAccess=MagicMock(return_value=False),
@@ -47,18 +73,18 @@ class TestCheckOrRequestEventAccess:
 
 
 class TestRequestAutomationPermission:
-    """Tests for automation permission check."""
+    """Tests for macOS automation permission check."""
 
-    @patch("permissions.subprocess.run")
+    @patch("backends.macos.subprocess.run")
     def test_returns_true_on_success(self, mock_run):
-        from permissions import _request_automation_permission
+        from backends.macos import _request_automation_permission
 
         assert _request_automation_permission() is True
         mock_run.assert_called_once()
 
-    @patch("permissions.subprocess.run")
+    @patch("backends.macos.subprocess.run")
     def test_returns_false_on_denial(self, mock_run):
-        from permissions import _request_automation_permission
+        from backends.macos import _request_automation_permission
 
         mock_run.side_effect = subprocess.CalledProcessError(
             returncode=1,
@@ -69,28 +95,16 @@ class TestRequestAutomationPermission:
 
 
 class TestRequestMacosPermissions:
-    """Tests for request_macos_permissions orchestration."""
+    """Tests for MacOSPermissionManager orchestration."""
 
-    @patch("permissions._request_automation_permission")
-    @patch("permissions._load_core_graphics")
-    @patch("permissions.sys.platform", "linux")
-    def test_skips_on_non_macos(self, mock_load_core_graphics, mock_request_automation):
-        from permissions import request_macos_permissions
-
-        assert request_macos_permissions() is True
-
-        mock_load_core_graphics.assert_not_called()
-        mock_request_automation.assert_not_called()
-
-    @patch("permissions._request_automation_permission", return_value=False)
-    @patch("permissions._open_settings_for_missing_permissions")
-    @patch("permissions._load_core_graphics")
-    @patch("permissions.sys.platform", "darwin")
+    @patch("backends.macos._request_automation_permission")
+    @patch("backends.macos._load_core_graphics")
     def test_sets_env_to_disable_applescript_when_automation_missing(
-        self, mock_load_core_graphics, mock_open_settings, mock_request_automation
+        self, mock_load_core_graphics, mock_request_automation
     ):
-        from permissions import request_macos_permissions
+        from backends.macos import MacOSPermissionManager
 
+        mock_request_automation.return_value = False
         core_graphics = SimpleNamespace(
             CGPreflightListenEventAccess=MagicMock(return_value=True),
             CGRequestListenEventAccess=MagicMock(return_value=True),
@@ -100,18 +114,16 @@ class TestRequestMacosPermissions:
         mock_load_core_graphics.return_value = core_graphics
 
         with patch.dict(os.environ, {}, clear=True):
-            assert request_macos_permissions() is True
+            assert MacOSPermissionManager().preflight() is True
             assert os.environ.get("V2T_DISABLE_APPLESCRIPT") == "1"
-        mock_open_settings.assert_called_once()
 
-    @patch("permissions._request_automation_permission", return_value=True)
-    @patch("permissions._open_settings_for_missing_permissions")
-    @patch("permissions._load_core_graphics")
-    @patch("permissions.sys.platform", "darwin")
+    @patch("backends.macos._request_automation_permission", return_value=True)
+    @patch("backends.macos._open_settings_for_missing_permissions")
+    @patch("backends.macos._load_core_graphics")
     def test_returns_false_when_critical_permissions_missing(
         self, mock_load_core_graphics, mock_open_settings, mock_request_automation
     ):
-        from permissions import request_macos_permissions
+        from backends.macos import MacOSPermissionManager
 
         core_graphics = SimpleNamespace(
             CGPreflightListenEventAccess=MagicMock(return_value=False),
@@ -121,5 +133,5 @@ class TestRequestMacosPermissions:
         )
         mock_load_core_graphics.return_value = core_graphics
 
-        assert request_macos_permissions() is False
+        assert MacOSPermissionManager().preflight() is False
         mock_open_settings.assert_called_once()

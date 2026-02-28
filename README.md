@@ -1,6 +1,6 @@
-# Voice-to-Text macOS App
+# Voice-to-Text Desktop App
 
-A macOS application that captures microphone input, transcribes speech using a local Whisper model (`whisper.cpp`), and automatically types the transcribed text into the currently focused text input field.
+A desktop application that captures microphone input, transcribes speech using a local Whisper model (`whisper.cpp`), and types the transcribed text into the currently focused text input field.
 
 ## Features
 
@@ -8,16 +8,23 @@ A macOS application that captures microphone input, transcribes speech using a l
 - **Floating GUI Overlay**: Minimal always-on-top pill with hover hint and live wave animation
 - **Audio Feedback**: Distinct tones when recording starts/stops
 - **Local Transcription**: Uses `pywhispercpp` with configurable Whisper models for offline speech-to-text
-- **Automatic Text Injection**: Types transcribed text directly into any focused text field using AppleScript (macOS native)
-- **Privacy-First**: All processing happens locally on your Mac
+- **Automatic Text Injection**: Uses platform backends for focused-field typing
+- **Privacy-First**: All processing happens locally on your machine
 - **Startup Info**: Shows selected audio input device and model on launch
+
+## Platform Status
+
+- **macOS**: Full path. Global hotkeys, overlay, permission preflight, and AppleScript typing are supported.
+- **Windows**: Experimental. `pynput` hotkeys are available; typing supports `pynput` and a native `SendInput` backend.
+- **Linux X11**: Experimental. `pynput` hotkeys and typing are supported.
+- **Linux Wayland**: Degraded mode only by default. Global hotkeys and text injection are intentionally disabled.
 
 ## Installation
 
 ### Prerequisites
 - Python 3.12+
 - `uv` package manager (recommended)
-- macOS (for text injection and optimizations)
+- Desktop session with microphone access
 
 ### Setup
 
@@ -62,6 +69,25 @@ The app requires the following macOS permissions:
 
 On startup, the app now performs a best-effort permission preflight and requests missing access where macOS allows prompting.  
 If permission was previously denied, macOS may not show the prompt again; grant it manually in **System Settings**.
+
+Linux and Windows do not currently perform OS-native permission prompting. On Linux Wayland, global hotkeys and synthetic typing are disabled unless you add a custom backend.
+
+## Native Backend Requirements
+
+The `native` backend modes are platform-specific and depend on external OS APIs or tools:
+
+- **Windows native text injection**: `V2T_INJECT_MODE=native` uses Win32 `SendInput` and does not require extra tools.
+- **Windows native hotkeys**: `V2T_HOTKEY_BACKEND=native` uses `GetAsyncKeyState` polling for **Right Ctrl**.
+- **Linux X11 native text injection**: `V2T_INJECT_MODE=native` requires `xdotool` to be installed and available on `PATH`.
+- **Linux X11 native hotkeys**: `V2T_HOTKEY_BACKEND=native` requires `xinput` to be installed and available on `PATH`.
+- **Linux Wayland**: native hotkey and injection backends are not implemented. Use degraded mode with `V2T_ALLOW_DEGRADED_MODE=1`.
+
+Example Linux packages:
+
+```bash
+# Debian/Ubuntu
+sudo apt-get install xdotool xinput
+```
 
 ## Configuration
 
@@ -151,12 +177,48 @@ You can enable/disable the floating overlay with `V2T_GUI`:
 V2T_GUI=0 ./start.sh
 ```
 
+### Platform Backends
+
+You can force backend selection during testing or troubleshooting:
+
+```bash
+# Override platform detection
+V2T_PLATFORM_BACKEND=windows uv run python main.py
+V2T_PLATFORM_BACKEND=linux uv run python main.py
+
+# Force Linux session detection
+V2T_LINUX_SESSION=x11 uv run python main.py
+V2T_LINUX_SESSION=wayland uv run python main.py
+
+# Choose text injection backend
+V2T_INJECT_MODE=auto ./start.sh
+V2T_INJECT_MODE=pynput ./start.sh
+V2T_INJECT_MODE=native ./start.sh
+V2T_INJECT_MODE=disabled ./start.sh
+
+# Choose hotkey backend
+V2T_HOTKEY_BACKEND=auto ./start.sh
+V2T_HOTKEY_BACKEND=pynput ./start.sh
+V2T_HOTKEY_BACKEND=native ./start.sh
+V2T_HOTKEY_BACKEND=disabled ./start.sh
+
+# Allow startup without global hotkeys
+V2T_ALLOW_DEGRADED_MODE=1 ./start.sh
+```
+
+Notes:
+- macOS defaults to the AppleScript injector unless `V2T_INJECT_MODE=pynput` is set.
+- Windows defaults to `pynput`; `V2T_INJECT_MODE=native` enables the `SendInput` path.
+- Windows `V2T_HOTKEY_BACKEND=native` uses a polling-based `GetAsyncKeyState` backend for **Right Ctrl**.
+- Linux X11 defaults to `pynput`; `V2T_INJECT_MODE=native` requires `xdotool`, and `V2T_HOTKEY_BACKEND=native` requires `xinput`.
+- Linux Wayland and unknown Linux sessions require `V2T_ALLOW_DEGRADED_MODE=1` to continue without hotkeys.
+
 ## Usage
 
 1. Launch the app.
-2. Hold **Right Command** to start recording.
+2. Hold the configured hotkey to start recording.
 3. Speak your text.
-4. Release **Right Command** to stop and transcribe.
+4. Release the hotkey to stop and transcribe.
 5. Wait a moment for transcription; the text will appear in your active window.
 
 ## Technical Details
@@ -166,8 +228,8 @@ V2T_GUI=0 ./start.sh
 - **Transcription**: pywhispercpp (Bindings for whisper.cpp)
 - **Model**: small.en (GGML format)
 - **Audio**: sounddevice + numpy
-- **Input/Output**: pynput (monitoring), AppleScript (injection)
+- **Input/Output**: pynput, AppleScript, Win32 `SendInput`
 
 ## License
 
-[Add License Here]
+This project is licensed under the MIT License. See [LICENSE](/media/mondain/terrorbyte/workspace/github/v2t/LICENSE).

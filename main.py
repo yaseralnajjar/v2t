@@ -1,4 +1,3 @@
-from pynput import keyboard
 import threading
 import time
 import sys
@@ -9,7 +8,9 @@ from recorder import AudioRecorder
 from transcriber import AudioTranscriber
 from injector import TextInjector
 from sounds import play_start_sound, play_stop_sound
-from permissions import request_macos_permissions
+from permissions import request_runtime_permissions
+from hotkeys import create_hotkey_backend
+from backends import get_platform_capabilities
 
 
 class VoiceToTextApp:
@@ -29,14 +30,16 @@ class VoiceToTextApp:
         if self.mode == "ptt":
             self.mode = "push_to_talk"
 
-        # Hotkey configuration: Right Command only.
-        self.HOTKEY = {keyboard.Key.cmd_r}
+        self.capabilities = get_platform_capabilities()
         self.hotkey_down = set()
+        self.allow_degraded_mode = self._env_flag("V2T_ALLOW_DEGRADED_MODE", default=False)
 
         # Keep transcriptions in order and avoid concurrent text injection races.
         self._transcribe_count_lock = threading.Lock()
         self._transcribe_worker_lock = threading.Lock()
         self._active_transcriptions = 0
+        self.hotkeys = create_hotkey_backend()
+        self.hotkey_label = getattr(self.hotkeys, "label", "Unavailable")
 
         self.overlay = self._create_overlay()
 
@@ -56,7 +59,7 @@ class VoiceToTextApp:
             return FloatingOverlay(
                 get_level=self.recorder.get_current_level,
                 mode=self.mode,
-                hotkey_label="Right Command",
+                hotkey_label=self.hotkey_label,
                 app_icon_path=self._resolve_app_icon_path(),
             )
         except Exception as e:
@@ -117,16 +120,10 @@ class VoiceToTextApp:
             self._on_transcribe_end()
 
     def _is_hotkey(self, key):
-        if key in self.HOTKEY:
-            return True
-        # Match Right Command by virtual key as an extra guard.
-        value = getattr(key, "value", None)
-        vk = getattr(value, "vk", None)
-        return vk == 54
+        return self.hotkeys.is_hotkey(key)
 
     def _key_id(self, key):
-        value = getattr(key, "value", None)
-        return getattr(value, "vk", key)
+        return self.hotkeys.key_id(key)
 
     def on_press(self, key):
         if not self._is_hotkey(key):
@@ -209,13 +206,27 @@ class VoiceToTextApp:
         print(f"Audio input: {self.recorder.get_input_device_info()}")
         print(f"Mode: {self.mode}")
         print(f"GUI overlay: {'enabled' if self.overlay else 'disabled'}")
-        if self.mode == "toggle":
-            print("Press Right Command to toggle recording (Start/Stop).")
+        if self.capabilities.reason:
+            print(f"Platform note: {self.capabilities.reason}", flush=True)
+        if self.hotkeys.supported:
+            if self.mode == "toggle":
+                print(f"Press {self.hotkey_label} to toggle recording (Start/Stop).")
+            else:
+                print(f"Hold {self.hotkey_label} to record, release to transcribe.")
         else:
-            print("Hold Right Command to record, release to transcribe.")
+            print("Global hotkeys are unavailable.", flush=True)
+            if not self.allow_degraded_mode:
+                print(
+                    "Set V2T_ALLOW_DEGRADED_MODE=1 to run without global hotkeys.",
+                    flush=True,
+                )
+                return
+            print("Running in degraded mode: transcription hotkeys are disabled.", flush=True)
+            if not self.capabilities.text_injection:
+                print("Text injection is also disabled on this platform/session.", flush=True)
         print("Press Ctrl+C to exit.")
 
-        listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
+        listener = self.hotkeys.create_listener(on_press=self.on_press, on_release=self.on_release)
         listener.start()
 
         try:
@@ -235,7 +246,7 @@ class VoiceToTextApp:
 
 
 if __name__ == "__main__":
-    if not request_macos_permissions():
+    if not request_runtime_permissions():
         sys.exit(1)
     app = VoiceToTextApp()
 

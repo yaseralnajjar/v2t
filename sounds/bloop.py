@@ -1,8 +1,16 @@
 """Sound provider using wav files from assets/sounds/."""
 
 import os
-import sounddevice as sd
 import soundfile as sf
+
+try:
+    import sounddevice as sd
+except OSError:
+    class _MissingSoundDevice:
+        def play(self, *args, **kwargs):
+            raise OSError("PortAudio library not found")
+
+    sd = _MissingSoundDevice()
 
 ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "sounds")
 
