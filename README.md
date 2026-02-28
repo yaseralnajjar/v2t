@@ -56,6 +56,11 @@ The app requires the following macOS permissions:
 2. **Accessibility Access**: Required for input monitoring (hotkeys) and text injection.
    - Go to **System Settings** > **Privacy & Security** > **Accessibility**
    - Add/Enable your Terminal app (e.g., iTerm, Terminal, VS Code)
+3. **Input Monitoring**: Required for global hotkey listening.
+4. **Automation (System Events)**: Required for AppleScript text injection.
+
+On startup, the app now performs a best-effort permission preflight and requests missing access where macOS allows prompting.  
+If permission was previously denied, macOS may not show the prompt again; grant it manually in **System Settings**.
 
 ## Configuration
 

@@ -1,6 +1,8 @@
 """Unit tests for injector.py - TextInjector class."""
 
 import sys
+import subprocess
+import os
 from unittest.mock import Mock, patch, MagicMock
 import pytest
 
@@ -34,6 +36,16 @@ class TestTextInjectorInit:
         with patch.object(sys, 'platform', 'linux'):
             injector = TextInjector()
             assert injector.is_mac is False
+
+    @patch.dict(os.environ, {"V2T_DISABLE_APPLESCRIPT": "1"})
+    @patch('injector.Controller')
+    def test_init_disables_applescript_when_env_set(self, mock_controller):
+        """Test that AppleScript can be disabled by startup permission checks."""
+        from injector import TextInjector
+
+        with patch.object(sys, 'platform', 'darwin'):
+            injector = TextInjector()
+            assert injector._use_applescript is False
 
 
 class TestTextInjectorTypeText:
@@ -162,6 +174,47 @@ class TestTextInjectorTypeText:
             injector.type_text("hello")
 
         mock_keyboard.type.assert_any_call("hello")
+
+    @patch('injector.subprocess')
+    @patch('injector.Controller')
+    def test_type_text_disables_applescript_after_permission_failure(self, mock_controller, mock_subprocess):
+        """Test that permission failure disables AppleScript retries for this session."""
+        from injector import TextInjector
+
+        mock_subprocess.run.side_effect = Exception("not allowed to send keystrokes")
+        mock_keyboard = MagicMock()
+        mock_controller.return_value = mock_keyboard
+
+        with patch.object(sys, 'platform', 'darwin'):
+            injector = TextInjector()
+            injector.type_text("first")
+            injector.type_text("second")
+
+        # First call attempts AppleScript and fails, then all typing happens via pynput.
+        assert mock_subprocess.run.call_count == 1
+        assert mock_keyboard.type.call_count == 4
+
+    @patch('injector.subprocess')
+    @patch('injector.Controller')
+    def test_type_text_disables_applescript_from_called_process_stderr(self, mock_controller, mock_subprocess):
+        """Test that CalledProcessError stderr permission text disables AppleScript retries."""
+        from injector import TextInjector
+
+        mock_subprocess.run.side_effect = subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["osascript"],
+            stderr="System Events got an error: osascript is not allowed to send keystrokes. (1002)"
+        )
+        mock_keyboard = MagicMock()
+        mock_controller.return_value = mock_keyboard
+
+        with patch.object(sys, 'platform', 'darwin'):
+            injector = TextInjector()
+            injector.type_text("first")
+            injector.type_text("second")
+
+        assert mock_subprocess.run.call_count == 1
+        assert mock_keyboard.type.call_count == 4
 
     @patch('injector.time')
     @patch('injector.Controller')

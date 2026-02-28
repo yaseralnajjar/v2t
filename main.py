@@ -9,6 +9,7 @@ from recorder import AudioRecorder
 from transcriber import AudioTranscriber
 from injector import TextInjector
 from sounds import play_start_sound, play_stop_sound
+from permissions import request_macos_permissions
 
 class VoiceToTextApp:
     def __init__(self):
@@ -103,6 +104,8 @@ class VoiceToTextApp:
                 self.recorder.stop()
 
 if __name__ == "__main__":
+    if not request_macos_permissions():
+        sys.exit(1)
     app = VoiceToTextApp()
 
     def signal_handler(signum, frame):
