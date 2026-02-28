@@ -4,6 +4,7 @@ import time
 import sys
 import signal
 import os
+from pathlib import Path
 from recorder import AudioRecorder
 from transcriber import AudioTranscriber
 from injector import TextInjector
@@ -56,10 +57,23 @@ class VoiceToTextApp:
                 get_level=self.recorder.get_current_level,
                 mode=self.mode,
                 hotkey_label="Right Command",
+                app_icon_path=self._resolve_app_icon_path(),
             )
         except Exception as e:
             print(f"Warning: GUI overlay disabled ({e})", flush=True)
             return None
+
+    def _resolve_app_icon_path(self):
+        base = Path(__file__).resolve().parent
+        candidates = (
+            base / "assets" / "image.webp",
+            base / "assets" / "icons" / "image.webp",
+            base / "assets" / "icons" / "image_large_canvas.webp",
+        )
+        for candidate in candidates:
+            if candidate.exists():
+                return str(candidate)
+        return None
 
     def _set_overlay_state(self, state):
         if self.overlay:
