@@ -688,7 +688,10 @@ class TestSignalHandler:
 
         def send_sigint():
             time.sleep(0.2)
-            os.kill(os.getpid(), signal.SIGINT)
+            if os.name == "nt":
+                signal.raise_signal(signal.SIGINT)
+            else:
+                os.kill(os.getpid(), signal.SIGINT)
 
         sigint_thread = threading.Thread(target=send_sigint)
         sigint_thread.start()
