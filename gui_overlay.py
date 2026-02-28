@@ -3,8 +3,10 @@ import queue
 import sys
 from ctypes import c_void_p
 
-from PySide6.QtCore import QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+import Quartz
+from AppKit import NSWorkspace
+from PySide6.QtCore import QRect, QRectF, Qt, QTimer
+from PySide6.QtGui import QColor, QCursor, QFont, QGuiApplication, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QWidget
 
 
@@ -57,19 +59,19 @@ class _PillWindow(QWidget):
 
         painter.fillPath(path, QColor(fill))
         pen = QPen(QColor(border))
-        pen.setWidth(2)
+        pen.setWidthF(1.6)
         painter.setPen(pen)
         painter.drawPath(path)
 
-        inner_pad = 20.0
+        inner_pad = max(7.0, w * 0.14)
         usable_w = w - (2.0 * inner_pad)
         if usable_w <= 0.0 or not heights:
             return
 
         center_y = y1 + (h / 2.0)
-        max_h = h * 0.36
+        max_h = h * 0.42
         step = usable_w / (len(heights) + 1)
-        bar_w = max(2.0, step * 0.36)
+        bar_w = max(1.4, step * 0.28)
 
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(bar_color))
@@ -90,6 +92,7 @@ class _TipWindow(QWidget):
     def __init__(self, overlay, left_text, key_text, right_text):
         super().__init__()
         self.overlay = overlay
+        self._radius = 26.0
 
         self.setWindowFlags(
             Qt.Tool
@@ -104,20 +107,8 @@ class _TipWindow(QWidget):
             self.setAttribute(Qt.WA_MacAlwaysShowToolWindow, True)
         self.setFocusPolicy(Qt.NoFocus)
 
-        self.setStyleSheet(
-            "QWidget {"
-            "background-color: #000000;"
-            "border: 2px solid #545454;"
-            "border-radius: 26px;"
-            "}"
-            "QLabel {"
-            "background: transparent;"
-            "border: none;"
-            "}"
-        )
-
         layout = QHBoxLayout()
-        layout.setContentsMargins(22, 12, 22, 12)
+        layout.setContentsMargins(24, 14, 24, 14)
         layout.setSpacing(0)
 
         base_font = QFont("Helvetica", 20)
@@ -126,17 +117,17 @@ class _TipWindow(QWidget):
 
         left = QLabel(left_text)
         left.setFont(base_font)
-        left.setStyleSheet("color: #f2f2f2;")
+        left.setStyleSheet("color: #f2f2f2; background: transparent;")
         layout.addWidget(left)
 
         key = QLabel(key_text)
         key.setFont(bold_font)
-        key.setStyleSheet("color: #f38fd7;")
+        key.setStyleSheet("color: #f38fd7; background: transparent;")
         layout.addWidget(key)
 
         right = QLabel(right_text)
         right.setFont(base_font)
-        right.setStyleSheet("color: #f2f2f2;")
+        right.setStyleSheet("color: #f2f2f2; background: transparent;")
         layout.addWidget(right)
 
         self.setLayout(layout)
@@ -148,6 +139,22 @@ class _TipWindow(QWidget):
     def leaveEvent(self, event):
         self.overlay._on_tip_leave()
         super().leaveEvent(event)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+
+        rect = self.rect().adjusted(1, 1, -1, -1)
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(rect), self._radius, self._radius)
+
+        painter.fillPath(path, QColor(0, 0, 0, 235))
+        pen = QPen(QColor("#5a5a5a"))
+        pen.setWidth(2)
+        painter.setPen(pen)
+        painter.drawPath(path)
 
 
 class FloatingOverlay:
@@ -170,9 +177,13 @@ class FloatingOverlay:
         self._hovering_pill = False
         self._hovering_tip = False
 
-        self._pill_width = 96
-        self._pill_height = 30
-        self._pill_pad = 8
+        self._pill_width = 58
+        self._pill_height = 16
+        self._pill_pad = 4
+        self._screen_margin_x = 20
+        self._screen_margin_bottom = 28
+        self._window_margin_bottom = 16
+        self._last_anchor = None
 
         self._app = QApplication.instance()
         self._owns_app = self._app is None
@@ -266,27 +277,116 @@ class FloatingOverlay:
         else:
             self._tip.hide()
 
+    def _target_screen(self):
+        screen = QGuiApplication.screenAt(QCursor.pos())
+        if screen is not None:
+            return screen
+
+        active_window = self._app.activeWindow()
+        if active_window and active_window.screen():
+            return active_window.screen()
+
+        return self._pill.screen() or self._app.primaryScreen()
+
     def _screen_geometry(self):
-        screen = self._pill.screen() or self._app.primaryScreen()
-        return screen.geometry()
+        screen = self._target_screen()
+        if screen is None:
+            return QRect(0, 0, 1440, 900)
+        return screen.availableGeometry()
+
+    def _frontmost_window_geometry(self):
+        try:
+            app = NSWorkspace.sharedWorkspace().frontmostApplication()
+            if app is None:
+                return None
+            pid = app.processIdentifier()
+
+            options = Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements
+            windows = Quartz.CGWindowListCopyWindowInfo(options, Quartz.kCGNullWindowID) or []
+
+            candidates = []
+            for info in windows:
+                if info.get(Quartz.kCGWindowOwnerPID) != pid:
+                    continue
+
+                if int(info.get(Quartz.kCGWindowLayer, 0)) != 0:
+                    continue
+
+                alpha = float(info.get(Quartz.kCGWindowAlpha, 1.0))
+                if alpha <= 0.01:
+                    continue
+
+                bounds = info.get(Quartz.kCGWindowBounds)
+                if not bounds:
+                    continue
+
+                x = int(bounds.get("X", 0))
+                y = int(bounds.get("Y", 0))
+                w = int(bounds.get("Width", 0))
+                h = int(bounds.get("Height", 0))
+                if w < 240 or h < 140:
+                    continue
+
+                candidates.append(QRect(x, y, w, h))
+
+            if not candidates:
+                return None
+
+            candidates.sort(key=lambda rect: rect.width() * rect.height(), reverse=True)
+            return candidates[0]
+        except Exception:
+            return None
 
     def _position_pill(self):
-        geometry = self._screen_geometry()
+        window_geometry = self._frontmost_window_geometry()
+        screen_geometry = self._screen_geometry()
+        geometry = window_geometry or screen_geometry
+
         x = int(geometry.x() + ((geometry.width() - self._pill.width()) / 2))
-        y = int(geometry.y() + geometry.height() - self._pill.height() - 56)
+        x = max(screen_geometry.x() + self._screen_margin_x, x)
+        x = min(screen_geometry.right() - self._pill.width() - self._screen_margin_x, x)
+
+        bottom_margin = self._window_margin_bottom if window_geometry else self._screen_margin_bottom
+        y = int(geometry.bottom() - self._pill.height() - bottom_margin)
+        y = max(screen_geometry.y() + self._screen_margin_x, y)
         self._pill.move(x, y)
+        self._last_anchor = (
+            geometry.x(),
+            geometry.y(),
+            geometry.width(),
+            geometry.height(),
+            1 if window_geometry else 0,
+        )
 
     def _position_tip(self):
         self._tip.adjustSize()
 
         geometry = self._screen_geometry()
-        x = int(geometry.x() + ((geometry.width() - self._tip.width()) / 2))
+        x = int(self._pill.x() + ((self._pill.width() - self._tip.width()) / 2))
+        x = max(geometry.x() + self._screen_margin_x, x)
+        x = min(geometry.right() - self._tip.width() - self._screen_margin_x, x)
+
         y = int(self._pill.y() - self._tip.height() - 10)
+        y = max(geometry.y() + self._screen_margin_x, y)
         self._tip.move(x, y)
 
     def _tick(self):
         if not self._running:
             return
+
+        window_geometry = self._frontmost_window_geometry()
+        geometry = window_geometry or self._screen_geometry()
+        anchor = (
+            geometry.x(),
+            geometry.y(),
+            geometry.width(),
+            geometry.height(),
+            1 if window_geometry else 0,
+        )
+        if anchor != self._last_anchor:
+            self._position_pill()
+            if self._tip.isVisible():
+                self._position_tip()
 
         new_state = None
         while not self._state_updates.empty():
@@ -331,7 +431,7 @@ class FloatingOverlay:
         if self.state == self.STATE_IDLE:
             fill = "#7f7f7f"
             border = "#c8c8c8"
-            heights = [0.16] * 9
+            heights = [0.16] * 5
             bar_color = "#d9d9d9"
         elif self.state == self.STATE_TRANSCRIBING:
             fill = "#000000"
@@ -356,7 +456,7 @@ class FloatingOverlay:
         self._phase += 0.45
 
         heights = []
-        for i in range(9):
+        for i in range(5):
             wobble = 0.5 + (0.5 * math.sin(self._phase + (i * 0.65)))
             energy = 0.2 + (0.8 * level)
             heights.append(min(1.0, 0.14 + (wobble * energy)))
@@ -365,7 +465,7 @@ class FloatingOverlay:
     def _transcribing_heights(self):
         self._phase += 0.35
         heights = []
-        for i in range(9):
+        for i in range(5):
             wobble = 0.5 + (0.5 * math.sin(self._phase + (i * 0.75)))
             heights.append(0.16 + (0.36 * wobble))
         return heights
