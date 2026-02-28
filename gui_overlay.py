@@ -4,7 +4,7 @@ import sys
 from ctypes import c_void_p
 
 from PySide6.QtCore import QRect, QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QCursor, QFont, QGuiApplication, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QCursor, QFont, QGuiApplication, QIcon, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QWidget
 
 
@@ -163,10 +163,11 @@ class FloatingOverlay:
     STATE_TRANSCRIBING = "transcribing"
     _VALID_STATES = {STATE_IDLE, STATE_RECORDING, STATE_TRANSCRIBING}
 
-    def __init__(self, get_level, mode="push_to_talk", hotkey_label="Right Command"):
+    def __init__(self, get_level, mode="push_to_talk", hotkey_label="Right Command", app_icon_path=None):
         self.get_level = get_level
         self.mode = mode
         self.hotkey_label = hotkey_label
+        self.app_icon_path = app_icon_path
 
         self.state = self.STATE_IDLE
         self._state_updates = queue.SimpleQueue()
@@ -193,12 +194,25 @@ class FloatingOverlay:
         left_text, key_text, right_text = self._hint_parts()
         self._tip = _TipWindow(self, left_text, key_text, right_text)
         self._tip.hide()
+        self._apply_icon()
 
         self._tick_timer = QTimer()
         self._tick_timer.timeout.connect(self._tick)
 
         self._shutdown_timer = QTimer()
         self._shutdown_timer.timeout.connect(self._watch_shutdown)
+
+    def _apply_icon(self):
+        if not self.app_icon_path:
+            return
+
+        icon = QIcon(self.app_icon_path)
+        if icon.isNull():
+            return
+
+        self._app.setWindowIcon(icon)
+        self._pill.setWindowIcon(icon)
+        self._tip.setWindowIcon(icon)
 
     def _hint_parts(self):
         if self.mode == "toggle":
