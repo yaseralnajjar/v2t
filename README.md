@@ -232,4 +232,4 @@ Notes:
 
 ## License
 
-[Add License Here]
+This project is licensed under the MIT License. See [LICENSE](/media/mondain/terrorbyte/workspace/github/v2t/LICENSE).
