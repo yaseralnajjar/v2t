@@ -184,6 +184,8 @@ class FloatingOverlay:
         self._screen_margin_bottom = 28
         self._window_margin_bottom = 16
         self._last_anchor = None
+        self._pill_opacity_idle = 0.60
+        self._pill_opacity_active = 0.70
 
         self._app = QApplication.instance()
         self._owns_app = self._app is None
@@ -215,6 +217,7 @@ class FloatingOverlay:
         self._shutdown_event = shutdown_event
 
         self._position_pill()
+        self._apply_pill_opacity()
         self._pill.show()
         self._pill.raise_()
         self._apply_native_window_hints(self._pill)
@@ -394,9 +397,16 @@ class FloatingOverlay:
 
         if new_state and new_state != self.state:
             self.state = new_state
+            self._apply_pill_opacity()
             self._update_tip_visibility()
 
         self._pill.update()
+
+    def _apply_pill_opacity(self):
+        if self.state == self.STATE_IDLE:
+            self._pill.setWindowOpacity(self._pill_opacity_idle)
+        else:
+            self._pill.setWindowOpacity(self._pill_opacity_active)
 
     def _apply_native_window_hints(self, widget):
         if sys.platform != "darwin":
