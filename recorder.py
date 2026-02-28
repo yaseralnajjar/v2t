@@ -6,7 +6,11 @@ try:
     import sounddevice as sd
 except OSError:
     class _MissingSoundDevice:
-        def __getattr__(self, name):
+        class InputStream:
+            def __init__(self, *args, **kwargs):
+                raise OSError("PortAudio library not found")
+
+        def query_devices(self, *args, **kwargs):
             raise OSError("PortAudio library not found")
 
     sd = _MissingSoundDevice()

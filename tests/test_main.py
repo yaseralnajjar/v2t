@@ -4,20 +4,23 @@ import threading
 import signal
 import time
 import os
+from types import SimpleNamespace
 from unittest.mock import Mock, patch, MagicMock
 import numpy as np
 import pytest
 from backends.base import PlatformCapabilities
 
 
-def _set_command_hotkey_backend(app):
-    from pynput import keyboard
+def _fake_key(vk):
+    return SimpleNamespace(value=SimpleNamespace(vk=vk))
 
+
+def _set_command_hotkey_backend(app):
     backend = MagicMock()
     backend.supported = True
     backend.label = "Right Command"
     backend.key_name = "cmd_r"
-    backend.is_hotkey.side_effect = lambda key: key == keyboard.Key.cmd_r or getattr(getattr(key, "value", None), "vk", None) == 54
+    backend.is_hotkey.side_effect = lambda key: getattr(getattr(key, "value", None), "vk", None) == 54
     backend.key_id.side_effect = lambda key: getattr(getattr(key, "value", None), "vk", key)
     app.hotkeys = backend
     app.hotkey_label = backend.label
@@ -301,14 +304,13 @@ class TestToggleModeHotkeyHandling:
     ):
         """Test that pressing hotkey when not recording starts recording."""
         from main import VoiceToTextApp
-        from pynput import keyboard
 
         app = VoiceToTextApp()
         assert app.mode == "toggle"
         assert app.is_recording is False
         _set_command_hotkey_backend(app)
 
-        app.on_press(keyboard.Key.cmd_r)
+        app.on_press(_fake_key(54))
 
         assert app.is_recording is True
 
@@ -322,17 +324,16 @@ class TestToggleModeHotkeyHandling:
     ):
         """Test that pressing hotkey when recording stops recording (toggle mode)."""
         from main import VoiceToTextApp
-        from pynput import keyboard
 
         app = VoiceToTextApp()
         _set_command_hotkey_backend(app)
         app.recorder.stop.return_value = np.array([])
 
-        app.on_press(keyboard.Key.cmd_r)
+        app.on_press(_fake_key(54))
         assert app.is_recording is True
 
-        app.on_release(keyboard.Key.cmd_r)
-        app.on_press(keyboard.Key.cmd_r)
+        app.on_release(_fake_key(54))
+        app.on_press(_fake_key(54))
         assert app.is_recording is False
 
     @patch('main.AudioRecorder')
@@ -341,12 +342,11 @@ class TestToggleModeHotkeyHandling:
     def test_on_press_non_hotkey_does_nothing(self, mock_injector, mock_transcriber, mock_recorder):
         """Test that pressing non-hotkey key does nothing."""
         from main import VoiceToTextApp
-        from pynput import keyboard
 
         app = VoiceToTextApp()
         _set_command_hotkey_backend(app)
 
-        app.on_press(keyboard.Key.space)
+        app.on_press(_fake_key(32))
 
         assert app.is_recording is False
         app.recorder.start.assert_not_called()
@@ -360,14 +360,13 @@ class TestToggleModeHotkeyHandling:
     ):
         """Test that releasing hotkey does nothing in toggle mode."""
         from main import VoiceToTextApp
-        from pynput import keyboard
 
         app = VoiceToTextApp()
         _set_command_hotkey_backend(app)
-        app.on_press(keyboard.Key.cmd_r)
+        app.on_press(_fake_key(54))
         assert app.is_recording is True
 
-        app.on_release(keyboard.Key.cmd_r)
+        app.on_release(_fake_key(54))
 
         # Still recording - release doesn't stop in toggle mode
         assert app.is_recording is True
@@ -381,13 +380,12 @@ class TestToggleModeHotkeyHandling:
     ):
         """Repeated right-command press callbacks should trigger once per hold."""
         from main import VoiceToTextApp
-        from pynput import keyboard
 
         app = VoiceToTextApp()
         _set_command_hotkey_backend(app)
 
-        app.on_press(keyboard.Key.cmd_r)
-        app.on_press(keyboard.Key.cmd_r)
+        app.on_press(_fake_key(54))
+        app.on_press(_fake_key(54))
 
         assert app.is_recording is True
         app.recorder.start.assert_called_once()
@@ -401,12 +399,11 @@ class TestToggleModeHotkeyHandling:
     ):
         """Generic/left command should not trigger hotkey behavior."""
         from main import VoiceToTextApp
-        from pynput import keyboard
 
         app = VoiceToTextApp()
         _set_command_hotkey_backend(app)
 
-        app.on_press(keyboard.Key.cmd)
+        app.on_press(_fake_key(55))
 
         assert app.is_recording is False
         app.recorder.start.assert_not_called()
@@ -423,14 +420,13 @@ class TestPushToTalkModeHotkeyHandling:
     def test_on_press_starts_recording(self, mock_play_start, mock_injector, mock_transcriber, mock_recorder):
         """Test that pressing hotkey starts recording in push-to-talk mode."""
         from main import VoiceToTextApp
-        from pynput import keyboard
 
         app = VoiceToTextApp()
         assert app.mode == "push_to_talk"
         assert app.is_recording is False
         _set_command_hotkey_backend(app)
 
-        app.on_press(keyboard.Key.cmd_r)
+        app.on_press(_fake_key(54))
 
         assert app.is_recording is True
         app.recorder.start.assert_called_once()
@@ -445,14 +441,13 @@ class TestPushToTalkModeHotkeyHandling:
     ):
         """Test that pressing hotkey doesn't restart recording if already recording."""
         from main import VoiceToTextApp
-        from pynput import keyboard
 
         app = VoiceToTextApp()
         _set_command_hotkey_backend(app)
         app.is_recording = True
         app.recorder.start.reset_mock()
 
-        app.on_press(keyboard.Key.cmd_r)
+        app.on_press(_fake_key(54))
 
         assert app.is_recording is True
         app.recorder.start.assert_not_called()
@@ -468,17 +463,16 @@ class TestPushToTalkModeHotkeyHandling:
     ):
         """Test that releasing hotkey stops recording in push-to-talk mode."""
         from main import VoiceToTextApp
-        from pynput import keyboard
 
         app = VoiceToTextApp()
         _set_command_hotkey_backend(app)
         app.recorder.stop.return_value = np.array([0.1, 0.2])
 
-        app.on_press(keyboard.Key.cmd_r)
+        app.on_press(_fake_key(54))
         assert app.is_recording is True
 
         with patch('main.threading.Thread'):
-            app.on_release(keyboard.Key.cmd_r)
+            app.on_release(_fake_key(54))
 
         assert app.is_recording is False
         app.recorder.stop.assert_called_once()
@@ -490,13 +484,12 @@ class TestPushToTalkModeHotkeyHandling:
     def test_on_release_does_nothing_when_not_recording(self, mock_injector, mock_transcriber, mock_recorder):
         """Test that releasing hotkey does nothing if not recording."""
         from main import VoiceToTextApp
-        from pynput import keyboard
 
         app = VoiceToTextApp()
         _set_command_hotkey_backend(app)
         assert app.is_recording is False
 
-        app.on_release(keyboard.Key.cmd_r)
+        app.on_release(_fake_key(54))
 
         assert app.is_recording is False
         app.recorder.stop.assert_not_called()
@@ -509,15 +502,14 @@ class TestPushToTalkModeHotkeyHandling:
     def test_on_release_ignores_other_keys(self, mock_play_start, mock_injector, mock_transcriber, mock_recorder):
         """Test that releasing non-hotkey keys doesn't stop recording."""
         from main import VoiceToTextApp
-        from pynput import keyboard
 
         app = VoiceToTextApp()
         _set_command_hotkey_backend(app)
-        app.on_press(keyboard.Key.cmd_r)
+        app.on_press(_fake_key(54))
         assert app.is_recording is True
 
-        app.on_release(keyboard.Key.alt_l)
-        app.on_release(keyboard.Key.space)
+        app.on_release(_fake_key(58))
+        app.on_release(_fake_key(32))
 
         assert app.is_recording is True
         app.recorder.stop.assert_not_called()
@@ -533,17 +525,16 @@ class TestPushToTalkModeHotkeyHandling:
     ):
         """Releasing generic/left command should not stop right-command recording."""
         from main import VoiceToTextApp
-        from pynput import keyboard
 
         app = VoiceToTextApp()
         _set_command_hotkey_backend(app)
         app.recorder.stop.return_value = np.array([0.1, 0.2])
 
-        app.on_press(keyboard.Key.cmd_r)
+        app.on_press(_fake_key(54))
         assert app.is_recording is True
 
         # Releasing generic cmd should not stop.
-        app.on_release(keyboard.Key.cmd)
+        app.on_release(_fake_key(55))
         assert app.is_recording is True
         app.recorder.stop.assert_not_called()
 
@@ -558,20 +549,19 @@ class TestPushToTalkModeHotkeyHandling:
     ):
         """Test complete push-to-talk cycle: press -> release."""
         from main import VoiceToTextApp
-        from pynput import keyboard
 
         app = VoiceToTextApp()
         _set_command_hotkey_backend(app)
         app.recorder.stop.return_value = np.array([0.1, 0.2])
 
         # Press hotkey - should start recording
-        app.on_press(keyboard.Key.cmd_r)
+        app.on_press(_fake_key(54))
         assert app.is_recording is True
         app.recorder.start.assert_called_once()
 
         # Release hotkey - should stop and transcribe
         with patch('main.threading.Thread'):
-            app.on_release(keyboard.Key.cmd_r)
+            app.on_release(_fake_key(54))
 
         assert app.is_recording is False
         app.recorder.stop.assert_called_once()
