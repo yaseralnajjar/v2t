@@ -64,6 +64,15 @@ class TestAudioRecorderInit:
 
         assert recorder.recording is False
 
+    @patch('recorder.sd')
+    def test_init_sets_default_current_level(self, mock_sd):
+        """Test that __init__ sets live level to 0.0."""
+        from recorder import AudioRecorder
+
+        recorder = AudioRecorder()
+
+        assert recorder.get_current_level() == 0.0
+
 
 class TestAudioRecorderStart:
     """Tests for AudioRecorder.start() method."""
@@ -236,6 +245,23 @@ class TestAudioRecorderStop:
 
         assert recorder.stream is None
 
+    @patch('recorder.sd')
+    def test_stop_resets_current_level(self, mock_sd):
+        """Test that stop() resets the live level to 0.0."""
+        from recorder import AudioRecorder
+
+        mock_stream = MagicMock()
+        mock_sd.InputStream.return_value = mock_stream
+
+        recorder = AudioRecorder()
+        recorder.start()
+        recorder._callback(np.array([[0.3], [0.3]]), 2, None, None)
+        assert recorder.get_current_level() > 0.0
+
+        recorder.stop()
+
+        assert recorder.get_current_level() == 0.0
+
 
 class TestAudioRecorderCallback:
     """Tests for AudioRecorder._callback() method."""
@@ -267,6 +293,34 @@ class TestAudioRecorderCallback:
         recorder._callback(indata, 3, None, None)
 
         assert recorder.q.empty()
+
+    @patch('recorder.sd')
+    def test_callback_updates_live_level_when_recording(self, mock_sd):
+        """Test that callback updates live level while recording."""
+        from recorder import AudioRecorder
+
+        recorder = AudioRecorder()
+        recorder.recording = True
+
+        indata = np.array([[0.2], [0.2], [0.2]], dtype=np.float32)
+        recorder._callback(indata, 3, None, None)
+
+        assert recorder.get_current_level() > 0.0
+
+    @patch('recorder.sd')
+    def test_callback_resets_level_when_not_recording(self, mock_sd):
+        """Test that callback keeps level at 0 when not recording."""
+        from recorder import AudioRecorder
+
+        recorder = AudioRecorder()
+        recorder.recording = True
+        recorder._callback(np.array([[0.2], [0.2], [0.2]], dtype=np.float32), 3, None, None)
+        assert recorder.get_current_level() > 0.0
+
+        recorder.recording = False
+        recorder._callback(np.array([[0.2], [0.2], [0.2]], dtype=np.float32), 3, None, None)
+
+        assert recorder.get_current_level() == 0.0
 
     @patch('recorder.sd')
     def test_callback_copies_data(self, mock_sd):
