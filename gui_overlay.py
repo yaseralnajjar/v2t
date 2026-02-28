@@ -1,11 +1,8 @@
 import math
-import os
 import queue
 import sys
 from ctypes import c_void_p
 
-import Quartz
-from AppKit import NSWorkspace
 from PySide6.QtCore import QRect, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QCursor, QFont, QGuiApplication, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QWidget
@@ -178,17 +175,14 @@ class FloatingOverlay:
         self._hovering_pill = False
         self._hovering_tip = False
 
-        self._pill_width = 58
-        self._pill_height = 16
-        self._pill_pad = 4
+        self._pill_width = 52
+        self._pill_height = 14
+        self._pill_pad = 3
         self._screen_margin_x = 20
-        self._screen_margin_bottom = 28
-        self._window_margin_bottom = 16
+        self._screen_margin_bottom = 18
         self._last_anchor = None
         self._pill_opacity_idle = 0.60
         self._pill_opacity_active = 0.70
-        self._self_pid = os.getpid()
-        self._last_external_window_geometry = None
 
         self._app = QApplication.instance()
         self._owns_app = self._app is None
@@ -300,63 +294,15 @@ class FloatingOverlay:
             return QRect(0, 0, 1440, 900)
         return screen.availableGeometry()
 
-    def _frontmost_window_geometry(self):
-        try:
-            app = NSWorkspace.sharedWorkspace().frontmostApplication()
-            if app is None:
-                return self._last_external_window_geometry
-            pid = app.processIdentifier()
-            if pid == self._self_pid:
-                return self._last_external_window_geometry
-
-            options = Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements
-            windows = Quartz.CGWindowListCopyWindowInfo(options, Quartz.kCGNullWindowID) or []
-
-            candidates = []
-            for info in windows:
-                if info.get(Quartz.kCGWindowOwnerPID) != pid:
-                    continue
-
-                if int(info.get(Quartz.kCGWindowLayer, 0)) != 0:
-                    continue
-
-                alpha = float(info.get(Quartz.kCGWindowAlpha, 1.0))
-                if alpha <= 0.01:
-                    continue
-
-                bounds = info.get(Quartz.kCGWindowBounds)
-                if not bounds:
-                    continue
-
-                x = int(bounds.get("X", 0))
-                y = int(bounds.get("Y", 0))
-                w = int(bounds.get("Width", 0))
-                h = int(bounds.get("Height", 0))
-                if w < 240 or h < 140:
-                    continue
-
-                candidates.append(QRect(x, y, w, h))
-
-            if not candidates:
-                return self._last_external_window_geometry
-
-            candidates.sort(key=lambda rect: rect.width() * rect.height(), reverse=True)
-            self._last_external_window_geometry = candidates[0]
-            return self._last_external_window_geometry
-        except Exception:
-            return self._last_external_window_geometry
-
     def _position_pill(self):
-        window_geometry = self._frontmost_window_geometry()
         screen_geometry = self._screen_geometry()
-        geometry = window_geometry or screen_geometry
+        geometry = screen_geometry
 
         x = int(geometry.x() + ((geometry.width() - self._pill.width()) / 2))
         x = max(screen_geometry.x() + self._screen_margin_x, x)
         x = min(screen_geometry.right() - self._pill.width() - self._screen_margin_x, x)
 
-        bottom_margin = self._window_margin_bottom if window_geometry else self._screen_margin_bottom
-        y = int(geometry.bottom() - self._pill.height() - bottom_margin)
+        y = int(geometry.bottom() - self._pill.height() - self._screen_margin_bottom)
         y = max(screen_geometry.y() + self._screen_margin_x, y)
         self._pill.move(x, y)
         self._last_anchor = (
@@ -364,7 +310,6 @@ class FloatingOverlay:
             geometry.y(),
             geometry.width(),
             geometry.height(),
-            1 if window_geometry else 0,
         )
 
     def _position_tip(self):
@@ -383,14 +328,12 @@ class FloatingOverlay:
         if not self._running:
             return
 
-        window_geometry = self._frontmost_window_geometry()
-        geometry = window_geometry or self._screen_geometry()
+        geometry = self._screen_geometry()
         anchor = (
             geometry.x(),
             geometry.y(),
             geometry.width(),
             geometry.height(),
-            1 if window_geometry else 0,
         )
         if anchor != self._last_anchor:
             self._position_pill()
