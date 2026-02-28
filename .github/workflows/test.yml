@@ -6,6 +6,7 @@ on:
       - main
       - cross-platform-backends
   pull_request:
+  workflow_dispatch:
 
 jobs:
   pytest:
