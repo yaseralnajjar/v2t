@@ -1,7 +1,15 @@
-import sounddevice as sd
 import numpy as np
 import queue
 import threading
+
+try:
+    import sounddevice as sd
+except OSError:
+    class _MissingSoundDevice:
+        def __getattr__(self, name):
+            raise OSError("PortAudio library not found")
+
+    sd = _MissingSoundDevice()
 
 class AudioRecorder:
     def __init__(self, samplerate=16000, channels=1):

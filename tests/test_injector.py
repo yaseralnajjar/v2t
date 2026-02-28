@@ -90,18 +90,20 @@ class TestInjectorFactory:
 class TestMacOSTextInjector:
     """Tests for the macOS-specific injector backend."""
 
-    @patch("backends.macos.Controller")
-    def test_type_text_does_nothing_for_empty_text(self, mock_controller):
+    @patch("backends.macos._create_keyboard_controller")
+    def test_type_text_does_nothing_for_empty_text(self, mock_create_keyboard_controller):
         from backends.macos import MacOSTextInjector
 
+        mock_keyboard = MagicMock()
+        mock_create_keyboard_controller.return_value = mock_keyboard
         injector = MacOSTextInjector()
         injector.type_text("")
 
         injector.keyboard.type.assert_not_called()
 
     @patch("backends.macos.subprocess")
-    @patch("backends.macos.Controller")
-    def test_type_text_uses_applescript_on_mac(self, mock_controller, mock_subprocess):
+    @patch("backends.macos._create_keyboard_controller")
+    def test_type_text_uses_applescript_on_mac(self, mock_create_keyboard_controller, mock_subprocess):
         from backends.macos import MacOSTextInjector
 
         injector = MacOSTextInjector()
@@ -112,8 +114,8 @@ class TestMacOSTextInjector:
         assert any("osascript" in str(call) for call in calls)
 
     @patch("backends.macos.subprocess")
-    @patch("backends.macos.Controller")
-    def test_type_text_escapes_quotes_for_applescript(self, mock_controller, mock_subprocess):
+    @patch("backends.macos._create_keyboard_controller")
+    def test_type_text_escapes_quotes_for_applescript(self, mock_create_keyboard_controller, mock_subprocess):
         from backends.macos import MacOSTextInjector
 
         injector = MacOSTextInjector()
@@ -124,8 +126,8 @@ class TestMacOSTextInjector:
         assert '\\"' in script
 
     @patch("backends.macos.subprocess")
-    @patch("backends.macos.Controller")
-    def test_type_text_escapes_backslashes_for_applescript(self, mock_controller, mock_subprocess):
+    @patch("backends.macos._create_keyboard_controller")
+    def test_type_text_escapes_backslashes_for_applescript(self, mock_create_keyboard_controller, mock_subprocess):
         from backends.macos import MacOSTextInjector
 
         injector = MacOSTextInjector()
@@ -136,8 +138,8 @@ class TestMacOSTextInjector:
         assert "\\\\" in script
 
     @patch("backends.macos.subprocess")
-    @patch("backends.macos.Controller")
-    def test_type_text_adds_trailing_space_on_mac(self, mock_controller, mock_subprocess):
+    @patch("backends.macos._create_keyboard_controller")
+    def test_type_text_adds_trailing_space_on_mac(self, mock_create_keyboard_controller, mock_subprocess):
         from backends.macos import MacOSTextInjector
 
         injector = MacOSTextInjector()
@@ -148,13 +150,13 @@ class TestMacOSTextInjector:
         assert 'keystroke " "' in space_call[0][0][2]
 
     @patch("backends.macos.subprocess")
-    @patch("backends.macos.Controller")
-    def test_type_text_falls_back_to_pynput_on_applescript_failure(self, mock_controller, mock_subprocess):
+    @patch("backends.macos._create_keyboard_controller")
+    def test_type_text_falls_back_to_pynput_on_applescript_failure(self, mock_create_keyboard_controller, mock_subprocess):
         from backends.macos import MacOSTextInjector
 
         mock_subprocess.run.side_effect = Exception("AppleScript error")
         mock_keyboard = MagicMock()
-        mock_controller.return_value = mock_keyboard
+        mock_create_keyboard_controller.return_value = mock_keyboard
 
         injector = MacOSTextInjector()
         injector.type_text("hello")
@@ -162,13 +164,13 @@ class TestMacOSTextInjector:
         mock_keyboard.type.assert_any_call("hello")
 
     @patch("backends.macos.subprocess")
-    @patch("backends.macos.Controller")
-    def test_type_text_disables_applescript_after_permission_failure(self, mock_controller, mock_subprocess):
+    @patch("backends.macos._create_keyboard_controller")
+    def test_type_text_disables_applescript_after_permission_failure(self, mock_create_keyboard_controller, mock_subprocess):
         from backends.macos import MacOSTextInjector
 
         mock_subprocess.run.side_effect = Exception("not allowed to send keystrokes")
         mock_keyboard = MagicMock()
-        mock_controller.return_value = mock_keyboard
+        mock_create_keyboard_controller.return_value = mock_keyboard
 
         injector = MacOSTextInjector()
         injector.type_text("first")
@@ -178,8 +180,8 @@ class TestMacOSTextInjector:
         assert mock_keyboard.type.call_count == 4
 
     @patch("backends.macos.subprocess")
-    @patch("backends.macos.Controller")
-    def test_type_text_disables_applescript_from_called_process_stderr(self, mock_controller, mock_subprocess):
+    @patch("backends.macos._create_keyboard_controller")
+    def test_type_text_disables_applescript_from_called_process_stderr(self, mock_create_keyboard_controller, mock_subprocess):
         from backends.macos import MacOSTextInjector
 
         mock_subprocess.run.side_effect = subprocess.CalledProcessError(
@@ -188,7 +190,7 @@ class TestMacOSTextInjector:
             stderr="System Events got an error: osascript is not allowed to send keystrokes. (1002)",
         )
         mock_keyboard = MagicMock()
-        mock_controller.return_value = mock_keyboard
+        mock_create_keyboard_controller.return_value = mock_keyboard
 
         injector = MacOSTextInjector()
         injector.type_text("first")
@@ -198,12 +200,12 @@ class TestMacOSTextInjector:
         assert mock_keyboard.type.call_count == 4
 
     @patch("backends.macos.time")
-    @patch("backends.macos.Controller")
-    def test_type_text_adds_delay_before_typing(self, mock_controller, mock_time):
+    @patch("backends.macos._create_keyboard_controller")
+    def test_type_text_adds_delay_before_typing(self, mock_create_keyboard_controller, mock_time):
         from backends.macos import MacOSTextInjector
 
         mock_keyboard = MagicMock()
-        mock_controller.return_value = mock_keyboard
+        mock_create_keyboard_controller.return_value = mock_keyboard
 
         injector = MacOSTextInjector()
         injector.type_text("hello")

@@ -4,16 +4,20 @@ import os
 import subprocess
 import time
 
-from pynput.keyboard import Controller
-
 from backends.base import BasePermissionManager, BaseTextInjector
+
+
+def _create_keyboard_controller():
+    from pynput.keyboard import Controller
+
+    return Controller()
 
 
 class MacOSTextInjector(BaseTextInjector):
     platform_name = "darwin"
 
     def __init__(self):
-        self.keyboard = Controller()
+        self.keyboard = _create_keyboard_controller()
         self._use_applescript = os.environ.get("V2T_DISABLE_APPLESCRIPT") != "1"
 
     def type_text(self, text):

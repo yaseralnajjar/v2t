@@ -1,4 +1,5 @@
 import os
+from importlib import import_module
 
 from backends.base import NoOpTextInjector
 from backends.detect import get_platform_capabilities, get_platform_name
@@ -60,3 +61,11 @@ __all__ = [
     "get_platform_capabilities",
     "get_platform_name",
 ]
+
+
+def __getattr__(name):
+    if name in {"macos", "windows", "linux"}:
+        module = import_module(f"backends.{name}")
+        globals()[name] = module
+        return module
+    raise AttributeError(f"module 'backends' has no attribute {name!r}")
