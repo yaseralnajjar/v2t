@@ -61,22 +61,22 @@ class _PillWindow(QWidget):
         painter.setPen(pen)
         painter.drawPath(path)
 
-        inner_pad = max(7.0, w * 0.14)
+        inner_pad = max(5.0, w * 0.12)
         usable_w = w - (2.0 * inner_pad)
         if usable_w <= 0.0 or not heights:
             return
 
         center_y = y1 + (h / 2.0)
-        max_h = h * 0.42
+        max_h = h * 0.68
         step = usable_w / (len(heights) + 1)
-        bar_w = max(1.4, step * 0.28)
+        bar_w = max(1.2, step * 0.34)
 
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(bar_color))
 
         for index, height in enumerate(heights):
             px = x1 + inner_pad + ((index + 1) * step)
-            bar_h = max(2.0, max_h * height)
+            bar_h = max(1.2, max_h * height)
             bar_rect = QRectF(
                 px - (bar_w / 2.0),
                 center_y - (bar_h / 2.0),
@@ -184,6 +184,7 @@ class FloatingOverlay:
         self._last_anchor = None
         self._pill_opacity_idle = 0.60
         self._pill_opacity_active = 0.70
+        self._smoothed_level = 0.0
 
         self._app = QApplication.instance()
         self._owns_app = self._app is None
@@ -402,43 +403,48 @@ class FloatingOverlay:
 
     def _render_params(self):
         if self.state == self.STATE_IDLE:
-            fill = "#7f7f7f"
-            border = "#c8c8c8"
-            heights = [0.16] * 5
-            bar_color = "#d9d9d9"
+            fill = "#787878"
+            border = "#c3c3c3"
+            heights = [0.14] * 5
+            bar_color = "#d7d7d7"
         elif self.state == self.STATE_TRANSCRIBING:
-            fill = "#000000"
-            border = "#555555"
+            fill = "#111111"
+            border = "#4f4f4f"
             heights = self._transcribing_heights()
-            bar_color = "#9f9f9f"
+            bar_color = "#a7b2c8"
         else:
-            fill = "#000000"
-            border = "#555555"
+            fill = "#0b120d"
+            border = "#4f6f5a"
             heights = self._recording_heights()
-            bar_color = "#f0f0f0"
+            bar_color = "#76ffad"
 
         return fill, border, bar_color, heights
 
     def _recording_heights(self):
         try:
-            level = float(self.get_level())
+            raw_level = float(self.get_level())
         except Exception:
-            level = 0.0
+            raw_level = 0.0
 
-        level = min(1.0, max(0.0, level))
-        self._phase += 0.45
+        raw_level = min(1.0, max(0.0, raw_level))
+        boosted = min(1.0, math.sqrt(raw_level) * 1.18)
+        self._smoothed_level = (0.72 * self._smoothed_level) + (0.28 * boosted)
+        level = self._smoothed_level
+        self._phase += 0.6
+        envelope = [0.38, 0.64, 1.0, 0.64, 0.38]
 
         heights = []
         for i in range(5):
-            wobble = 0.5 + (0.5 * math.sin(self._phase + (i * 0.65)))
-            energy = 0.2 + (0.8 * level)
-            heights.append(min(1.0, 0.14 + (wobble * energy)))
+            pulse = 0.5 + (0.5 * math.sin((self._phase * 1.12) + (i * 0.95)))
+            energy = 0.18 + (0.82 * level)
+            h = 0.08 + (envelope[i] * energy * (0.35 + (0.65 * pulse)))
+            heights.append(min(1.0, h))
         return heights
 
     def _transcribing_heights(self):
-        self._phase += 0.35
+        self._phase += 0.4
         heights = []
         for i in range(5):
             wobble = 0.5 + (0.5 * math.sin(self._phase + (i * 0.75)))
-            heights.append(0.16 + (0.36 * wobble))
+            heights.append(0.22 + (0.42 * wobble))
         return heights
