@@ -1,4 +1,5 @@
 import math
+import os
 import queue
 import sys
 from ctypes import c_void_p
@@ -186,6 +187,8 @@ class FloatingOverlay:
         self._last_anchor = None
         self._pill_opacity_idle = 0.60
         self._pill_opacity_active = 0.70
+        self._self_pid = os.getpid()
+        self._last_external_window_geometry = None
 
         self._app = QApplication.instance()
         self._owns_app = self._app is None
@@ -301,8 +304,10 @@ class FloatingOverlay:
         try:
             app = NSWorkspace.sharedWorkspace().frontmostApplication()
             if app is None:
-                return None
+                return self._last_external_window_geometry
             pid = app.processIdentifier()
+            if pid == self._self_pid:
+                return self._last_external_window_geometry
 
             options = Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements
             windows = Quartz.CGWindowListCopyWindowInfo(options, Quartz.kCGNullWindowID) or []
@@ -333,12 +338,13 @@ class FloatingOverlay:
                 candidates.append(QRect(x, y, w, h))
 
             if not candidates:
-                return None
+                return self._last_external_window_geometry
 
             candidates.sort(key=lambda rect: rect.width() * rect.height(), reverse=True)
-            return candidates[0]
+            self._last_external_window_geometry = candidates[0]
+            return self._last_external_window_geometry
         except Exception:
-            return None
+            return self._last_external_window_geometry
 
     def _position_pill(self):
         window_geometry = self._frontmost_window_geometry()
