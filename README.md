@@ -4,7 +4,8 @@ A macOS application that captures microphone input, transcribes speech using a l
 
 ## Features
 
-- **Hotkey Control**: Press **Right Command** to toggle recording (Start/Stop)
+- **Push-to-Talk by Default**: Hold **Right Command** to record, release to transcribe
+- **Floating GUI Overlay**: Minimal always-on-top pill with hover hint and live wave animation
 - **Audio Feedback**: Distinct tones when recording starts/stops
 - **Local Transcription**: Uses `pywhispercpp` with configurable Whisper models for offline speech-to-text
 - **Automatic Text Injection**: Types transcribed text directly into any focused text field using AppleScript (macOS native)
@@ -138,17 +139,30 @@ V2T_SOUND=click ./start.sh
 | `simple` | Simple sine wave tones |
 | `click` | Short click sounds |
 
+### GUI Overlay
+
+You can enable/disable the floating overlay with `V2T_GUI`:
+
+```bash
+# Default: enabled
+./start.sh
+
+# Disable overlay and run in terminal-only mode
+V2T_GUI=0 ./start.sh
+```
+
 ## Usage
 
 1. Launch the app.
-2. Press **Right Command** once to start recording.
+2. Hold **Right Command** to start recording.
 3. Speak your text.
-4. Press **Right Command** again to stop.
+4. Release **Right Command** to stop and transcribe.
 5. Wait a moment for transcription; the text will appear in your active window.
 
 ## Technical Details
 
 - **Language**: Python 3.12
+- **GUI**: PySide6 (Qt for Python)
 - **Transcription**: pywhispercpp (Bindings for whisper.cpp)
 - **Model**: small.en (GGML format)
 - **Audio**: sounddevice + numpy

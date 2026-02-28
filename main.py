@@ -1,15 +1,16 @@
 from pynput import keyboard
-import numpy as np
 import threading
 import time
 import sys
 import signal
 import os
+from pathlib import Path
 from recorder import AudioRecorder
 from transcriber import AudioTranscriber
 from injector import TextInjector
 from sounds import play_start_sound, play_stop_sound
 from permissions import request_macos_permissions
+
 
 class VoiceToTextApp:
     def __init__(self):
@@ -31,6 +32,89 @@ class VoiceToTextApp:
         # Hotkey configuration: Right Command only.
         self.HOTKEY = {keyboard.Key.cmd_r}
         self.hotkey_down = set()
+
+        # Keep transcriptions in order and avoid concurrent text injection races.
+        self._transcribe_count_lock = threading.Lock()
+        self._transcribe_worker_lock = threading.Lock()
+        self._active_transcriptions = 0
+
+        self.overlay = self._create_overlay()
+
+    def _env_flag(self, key, default=True):
+        value = os.environ.get(key)
+        if value is None:
+            return default
+        return value.strip().lower() not in ("0", "false", "off", "no")
+
+    def _create_overlay(self):
+        if not self._env_flag("V2T_GUI", default=True):
+            return None
+
+        try:
+            from gui_overlay import FloatingOverlay
+
+            return FloatingOverlay(
+                get_level=self.recorder.get_current_level,
+                mode=self.mode,
+                hotkey_label="Right Command",
+                app_icon_path=self._resolve_app_icon_path(),
+            )
+        except Exception as e:
+            print(f"Warning: GUI overlay disabled ({e})", flush=True)
+            return None
+
+    def _resolve_app_icon_path(self):
+        base = Path(__file__).resolve().parent
+        candidates = (
+            base / "assets" / "image.webp",
+            base / "assets" / "icons" / "image.webp",
+            base / "assets" / "icons" / "image_large_canvas.webp",
+        )
+        for candidate in candidates:
+            if candidate.exists():
+                return str(candidate)
+        return None
+
+    def _set_overlay_state(self, state):
+        if self.overlay:
+            self.overlay.set_state_threadsafe(state)
+
+    def _on_recording_start(self):
+        self._set_overlay_state("recording")
+
+    def _on_recording_stop(self):
+        with self._transcribe_count_lock:
+            has_pending = self._active_transcriptions > 0
+        if not has_pending:
+            self._set_overlay_state("idle")
+
+    def _on_transcribe_start(self):
+        self._set_overlay_state("transcribing")
+
+    def _on_transcribe_end(self):
+        with self._transcribe_count_lock:
+            has_pending = self._active_transcriptions > 0
+        if not self.is_recording and not has_pending:
+            self._set_overlay_state("idle")
+
+    def _begin_transcription(self):
+        should_notify = False
+        with self._transcribe_count_lock:
+            self._active_transcriptions += 1
+            if self._active_transcriptions == 1:
+                should_notify = True
+        if should_notify:
+            self._on_transcribe_start()
+
+    def _end_transcription(self):
+        should_notify = False
+        with self._transcribe_count_lock:
+            if self._active_transcriptions > 0:
+                self._active_transcriptions -= 1
+            if self._active_transcriptions == 0:
+                should_notify = True
+        if should_notify:
+            self._on_transcribe_end()
 
     def _is_hotkey(self, key):
         if key in self.HOTKEY:
@@ -84,6 +168,7 @@ class VoiceToTextApp:
         play_start_sound()
         self.is_recording = True
         self.recorder.start()
+        self._on_recording_start()
 
     def stop_recording_and_transcribe(self):
         print("Hotkey released! Stopping recording...", flush=True)
@@ -93,30 +178,37 @@ class VoiceToTextApp:
 
         if len(audio_data) == 0:
             print("No audio recorded.", flush=True)
+            self._on_recording_stop()
             return
 
+        self._begin_transcription()
+        self._on_recording_stop()
+
         print("Transcribing...", flush=True)
-        # Run transcription in a separate thread to not block the listener?
-        # Actually, we want to block or at least process it.
-        # Since we are in the listener callback, we should be careful not to block it for too long if we want to detect other keys.
-        # But for this simple app, blocking the listener might be okay, or we can offload to a thread.
-        # Let's offload to a thread to keep the UI/Hotkey responsive.
-        threading.Thread(target=self._process_audio, args=(audio_data,), daemon=True).start()
+        try:
+            threading.Thread(target=self._process_audio, args=(audio_data,), daemon=True).start()
+        except Exception:
+            self._end_transcription()
+            raise
 
     def _process_audio(self, audio_data):
         try:
-            text = self.transcriber.transcribe(audio_data)
-            print(f"Transcribed: '{text}'", flush=True)
-            if text:
-                self.injector.type_text(text)
+            with self._transcribe_worker_lock:
+                text = self.transcriber.transcribe(audio_data)
+                print(f"Transcribed: '{text}'", flush=True)
+                if text:
+                    self.injector.type_text(text)
         except Exception as e:
             print(f"Error during processing: {e}", flush=True)
+        finally:
+            self._end_transcription()
 
     def run(self):
         print("Voice-to-Text App Running...")
         print(f"Model: {self.transcriber.get_model_name()}")
         print(f"Audio input: {self.recorder.get_input_device_info()}")
         print(f"Mode: {self.mode}")
+        print(f"GUI overlay: {'enabled' if self.overlay else 'disabled'}")
         if self.mode == "toggle":
             print("Press Right Command to toggle recording (Start/Stop).")
         else:
@@ -127,12 +219,20 @@ class VoiceToTextApp:
         listener.start()
 
         try:
-            while not self.shutdown_event.is_set():
-                time.sleep(0.1)
+            if self.overlay:
+                self._set_overlay_state("idle")
+                self.overlay.run(self.shutdown_event)
+            else:
+                while not self.shutdown_event.is_set():
+                    time.sleep(0.1)
         finally:
             listener.stop()
             if self.is_recording:
                 self.recorder.stop()
+                self.is_recording = False
+            if self.overlay:
+                self.overlay.close()
+
 
 if __name__ == "__main__":
     if not request_macos_permissions():

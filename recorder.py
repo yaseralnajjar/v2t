@@ -10,6 +10,8 @@ class AudioRecorder:
         self.q = queue.Queue()
         self.recording = False
         self.stream = None
+        self._level_lock = threading.Lock()
+        self._current_level = 0.0
 
     def get_input_device_info(self):
         """Get information about the current default input device."""
@@ -19,10 +21,25 @@ class AudioRecorder:
         except Exception as e:
             return f"Unknown (error: {e})"
 
+    def get_current_level(self):
+        """Return a normalized live input level in range [0.0, 1.0]."""
+        with self._level_lock:
+            return self._current_level
+
     def _callback(self, indata, frames, time, status):
         """This is called (from a separate thread) for each audio block."""
         if status:
             print(status, flush=True)
+
+        if indata.size:
+            rms = float(np.sqrt(np.mean(np.square(indata))))
+            normalized = min(1.0, rms * 8.0)
+        else:
+            normalized = 0.0
+
+        with self._level_lock:
+            self._current_level = normalized if self.recording else 0.0
+
         if self.recording:
             self.q.put(indata.copy())
 
@@ -32,6 +49,8 @@ class AudioRecorder:
             return
         self.recording = True
         self.q.queue.clear()
+        with self._level_lock:
+            self._current_level = 0.0
         self.stream = sd.InputStream(
             samplerate=self.samplerate,
             channels=self.channels,
@@ -43,9 +62,13 @@ class AudioRecorder:
     def stop(self):
         """Stop recording and return the audio data."""
         if not self.recording:
+            with self._level_lock:
+                self._current_level = 0.0
             return np.array([])
         
         self.recording = False
+        with self._level_lock:
+            self._current_level = 0.0
         if self.stream:
             self.stream.stop()
             self.stream.close()

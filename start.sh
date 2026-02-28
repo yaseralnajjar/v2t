@@ -9,6 +9,8 @@ cd "$SCRIPT_DIR"
 
 # Default to push-to-talk mode unless explicitly overridden.
 export V2T_MODE="${V2T_MODE:-push_to_talk}"
+# Default to GUI overlay unless explicitly overridden.
+export V2T_GUI="${V2T_GUI:-1}"
 
 # Check if another instance is running
 if pgrep -f "python.*main.py" > /dev/null; then
@@ -19,6 +21,7 @@ fi
 
 echo "🎙️  Starting Voice-to-Text..."
 echo "Mode: $V2T_MODE"
+echo "GUI overlay: $V2T_GUI"
 if [ "$V2T_MODE" = "toggle" ]; then
     echo "Press Right Command to toggle recording (Start/Stop)"
 else
