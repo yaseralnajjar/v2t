@@ -162,7 +162,7 @@ V2T_GUI=0 ./start.sh
 ## Technical Details
 
 - **Language**: Python 3.12
-- **GUI**: Tkinter (stdlib)
+- **GUI**: PySide6 (Qt for Python)
 - **Transcription**: pywhispercpp (Bindings for whisper.cpp)
 - **Model**: small.en (GGML format)
 - **Audio**: sounddevice + numpy
