@@ -1,23 +1,27 @@
 """Tests for sounds package top-level delegation and simple provider tone generation."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 
 
 class TestSoundsDelegation:
-    @patch("sounds._provider")
-    def test_play_start_sound_delegates_to_provider(self, mock_provider):
+    @patch("sounds._get_provider")
+    def test_play_start_sound_delegates_to_provider(self, mock_get_provider):
         from sounds import play_start_sound
 
+        mock_provider = MagicMock()
+        mock_get_provider.return_value = mock_provider
         play_start_sound()
 
         mock_provider.play_start.assert_called_once()
 
-    @patch("sounds._provider")
-    def test_play_stop_sound_delegates_to_provider(self, mock_provider):
+    @patch("sounds._get_provider")
+    def test_play_stop_sound_delegates_to_provider(self, mock_get_provider):
         from sounds import play_stop_sound
 
+        mock_provider = MagicMock()
+        mock_get_provider.return_value = mock_provider
         play_stop_sound()
 
         mock_provider.play_stop.assert_called_once()

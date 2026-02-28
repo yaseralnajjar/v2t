@@ -59,9 +59,8 @@ class TestCreateHotkeyBackend:
 
         assert isinstance(backend, DisabledHotkeyBackend)
 
-    @patch.dict(os.environ, {"XDG_SESSION_TYPE": "wayland"}, clear=True)
-    @patch("hotkeys.get_platform_name", return_value="linux")
-    def test_wayland_returns_disabled_backend(self, mock_platform_name):
+    @patch.dict(os.environ, {"V2T_PLATFORM_BACKEND": "linux", "XDG_SESSION_TYPE": "wayland"}, clear=True)
+    def test_wayland_returns_disabled_backend(self):
         from hotkeys import DisabledHotkeyBackend, create_hotkey_backend
 
         backend = create_hotkey_backend()
