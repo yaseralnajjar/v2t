@@ -7,6 +7,20 @@ import os
 from unittest.mock import Mock, patch, MagicMock
 import numpy as np
 import pytest
+from backends.base import PlatformCapabilities
+
+
+def _set_command_hotkey_backend(app):
+    from pynput import keyboard
+
+    backend = MagicMock()
+    backend.supported = True
+    backend.label = "Right Command"
+    backend.key_name = "cmd_r"
+    backend.is_hotkey.side_effect = lambda key: key == keyboard.Key.cmd_r or getattr(getattr(key, "value", None), "vk", None) == 54
+    backend.key_id.side_effect = lambda key: getattr(getattr(key, "value", None), "vk", key)
+    app.hotkeys = backend
+    app.hotkey_label = backend.label
 
 
 class TestVoiceToTextAppInit:
@@ -41,15 +55,14 @@ class TestVoiceToTextAppInit:
     @patch('main.AudioRecorder')
     @patch('main.AudioTranscriber')
     @patch('main.TextInjector')
-    def test_init_configures_hotkey(self, mock_injector, mock_transcriber, mock_recorder):
-        """Test that __init__ configures the right command key as hotkey."""
+    def test_init_configures_hotkey_backend(self, mock_injector, mock_transcriber, mock_recorder):
+        """Test that __init__ configures a hotkey backend."""
         from main import VoiceToTextApp
-        from pynput import keyboard
 
         app = VoiceToTextApp()
 
-        assert keyboard.Key.cmd_r in app.HOTKEY
-        assert keyboard.Key.cmd not in app.HOTKEY
+        assert hasattr(app.hotkeys, "is_hotkey")
+        assert app.hotkey_label
 
     @patch('main.AudioRecorder')
     @patch('main.AudioTranscriber')
@@ -112,6 +125,7 @@ class TestVoiceToTextAppShutdown:
         app = VoiceToTextApp()
         app.recorder.get_input_device_info.return_value = "Test Device"
         app.transcriber.get_model_name.return_value = "test.en"
+        app.capabilities = PlatformCapabilities(True, True, True, True)
 
         def set_shutdown():
             time.sleep(0.2)
@@ -120,11 +134,10 @@ class TestVoiceToTextAppShutdown:
         shutdown_thread = threading.Thread(target=set_shutdown)
         shutdown_thread.start()
 
-        with patch('main.keyboard.Listener') as mock_listener:
-            mock_listener_instance = MagicMock()
-            mock_listener.return_value = mock_listener_instance
-
-            app.run()
+        mock_listener_instance = MagicMock()
+        app.hotkeys = MagicMock()
+        app.hotkeys.create_listener.return_value = mock_listener_instance
+        app.run()
 
         shutdown_thread.join()
         mock_listener_instance.stop.assert_called_once()
@@ -139,6 +152,7 @@ class TestVoiceToTextAppShutdown:
         app = VoiceToTextApp()
         app.recorder.get_input_device_info.return_value = "Test Device"
         app.transcriber.get_model_name.return_value = "test.en"
+        app.capabilities = PlatformCapabilities(True, True, True, True)
 
         def set_recording_and_shutdown():
             time.sleep(0.1)
@@ -149,11 +163,10 @@ class TestVoiceToTextAppShutdown:
         thread = threading.Thread(target=set_recording_and_shutdown)
         thread.start()
 
-        with patch('main.keyboard.Listener') as mock_listener:
-            mock_listener_instance = MagicMock()
-            mock_listener.return_value = mock_listener_instance
-
-            app.run()
+        mock_listener_instance = MagicMock()
+        app.hotkeys = MagicMock()
+        app.hotkeys.create_listener.return_value = mock_listener_instance
+        app.run()
 
         thread.join()
         app.recorder.stop.assert_called()
@@ -293,6 +306,7 @@ class TestToggleModeHotkeyHandling:
         app = VoiceToTextApp()
         assert app.mode == "toggle"
         assert app.is_recording is False
+        _set_command_hotkey_backend(app)
 
         app.on_press(keyboard.Key.cmd_r)
 
@@ -311,6 +325,7 @@ class TestToggleModeHotkeyHandling:
         from pynput import keyboard
 
         app = VoiceToTextApp()
+        _set_command_hotkey_backend(app)
         app.recorder.stop.return_value = np.array([])
 
         app.on_press(keyboard.Key.cmd_r)
@@ -329,6 +344,7 @@ class TestToggleModeHotkeyHandling:
         from pynput import keyboard
 
         app = VoiceToTextApp()
+        _set_command_hotkey_backend(app)
 
         app.on_press(keyboard.Key.space)
 
@@ -347,6 +363,7 @@ class TestToggleModeHotkeyHandling:
         from pynput import keyboard
 
         app = VoiceToTextApp()
+        _set_command_hotkey_backend(app)
         app.on_press(keyboard.Key.cmd_r)
         assert app.is_recording is True
 
@@ -367,6 +384,7 @@ class TestToggleModeHotkeyHandling:
         from pynput import keyboard
 
         app = VoiceToTextApp()
+        _set_command_hotkey_backend(app)
 
         app.on_press(keyboard.Key.cmd_r)
         app.on_press(keyboard.Key.cmd_r)
@@ -386,6 +404,7 @@ class TestToggleModeHotkeyHandling:
         from pynput import keyboard
 
         app = VoiceToTextApp()
+        _set_command_hotkey_backend(app)
 
         app.on_press(keyboard.Key.cmd)
 
@@ -409,6 +428,7 @@ class TestPushToTalkModeHotkeyHandling:
         app = VoiceToTextApp()
         assert app.mode == "push_to_talk"
         assert app.is_recording is False
+        _set_command_hotkey_backend(app)
 
         app.on_press(keyboard.Key.cmd_r)
 
@@ -428,6 +448,7 @@ class TestPushToTalkModeHotkeyHandling:
         from pynput import keyboard
 
         app = VoiceToTextApp()
+        _set_command_hotkey_backend(app)
         app.is_recording = True
         app.recorder.start.reset_mock()
 
@@ -450,6 +471,7 @@ class TestPushToTalkModeHotkeyHandling:
         from pynput import keyboard
 
         app = VoiceToTextApp()
+        _set_command_hotkey_backend(app)
         app.recorder.stop.return_value = np.array([0.1, 0.2])
 
         app.on_press(keyboard.Key.cmd_r)
@@ -471,6 +493,7 @@ class TestPushToTalkModeHotkeyHandling:
         from pynput import keyboard
 
         app = VoiceToTextApp()
+        _set_command_hotkey_backend(app)
         assert app.is_recording is False
 
         app.on_release(keyboard.Key.cmd_r)
@@ -489,6 +512,7 @@ class TestPushToTalkModeHotkeyHandling:
         from pynput import keyboard
 
         app = VoiceToTextApp()
+        _set_command_hotkey_backend(app)
         app.on_press(keyboard.Key.cmd_r)
         assert app.is_recording is True
 
@@ -512,6 +536,7 @@ class TestPushToTalkModeHotkeyHandling:
         from pynput import keyboard
 
         app = VoiceToTextApp()
+        _set_command_hotkey_backend(app)
         app.recorder.stop.return_value = np.array([0.1, 0.2])
 
         app.on_press(keyboard.Key.cmd_r)
@@ -536,6 +561,7 @@ class TestPushToTalkModeHotkeyHandling:
         from pynput import keyboard
 
         app = VoiceToTextApp()
+        _set_command_hotkey_backend(app)
         app.recorder.stop.return_value = np.array([0.1, 0.2])
 
         # Press hotkey - should start recording
@@ -653,6 +679,7 @@ class TestSignalHandler:
         app = VoiceToTextApp()
         app.recorder.get_input_device_info.return_value = "Test Device"
         app.transcriber.get_model_name.return_value = "test.en"
+        app.capabilities = PlatformCapabilities(True, True, True, True)
 
         def signal_handler(signum, frame):
             app.shutdown_event.set()
@@ -667,14 +694,69 @@ class TestSignalHandler:
         sigint_thread.start()
 
         try:
-            with patch('main.keyboard.Listener') as mock_listener:
-                mock_listener_instance = MagicMock()
-                mock_listener.return_value = mock_listener_instance
-
-                app.run()
+            mock_listener_instance = MagicMock()
+            app.hotkeys = MagicMock()
+            app.hotkeys.create_listener.return_value = mock_listener_instance
+            app.hotkeys.supported = True
+            app.hotkey_label = "Right Command"
+            app.capabilities = PlatformCapabilities(True, True, True, True)
+            app.run()
 
             assert app.shutdown_event.is_set()
             mock_listener_instance.stop.assert_called_once()
         finally:
             signal.signal(signal.SIGINT, original_handler)
             sigint_thread.join()
+
+
+class TestDegradedMode:
+    @patch.dict(os.environ, {"V2T_ALLOW_DEGRADED_MODE": "0"})
+    @patch("main.AudioRecorder")
+    @patch("main.AudioTranscriber")
+    @patch("main.TextInjector")
+    def test_run_returns_early_when_hotkeys_unavailable_and_not_allowed(
+        self, mock_injector, mock_transcriber, mock_recorder
+    ):
+        from main import VoiceToTextApp
+
+        app = VoiceToTextApp()
+        app.recorder.get_input_device_info.return_value = "Test Device"
+        app.transcriber.get_model_name.return_value = "test.en"
+        app.hotkeys = MagicMock()
+        app.hotkeys.supported = False
+        app.hotkeys.create_listener.return_value = MagicMock()
+        app.capabilities = PlatformCapabilities(False, False, True, False, "Wayland sessions usually block global key capture and synthetic typing.")
+
+        app.run()
+
+        app.hotkeys.create_listener.assert_not_called()
+
+    @patch.dict(os.environ, {"V2T_ALLOW_DEGRADED_MODE": "1"})
+    @patch("main.AudioRecorder")
+    @patch("main.AudioTranscriber")
+    @patch("main.TextInjector")
+    def test_run_starts_noop_listener_in_degraded_mode(
+        self, mock_injector, mock_transcriber, mock_recorder
+    ):
+        from main import VoiceToTextApp
+
+        app = VoiceToTextApp()
+        app.recorder.get_input_device_info.return_value = "Test Device"
+        app.transcriber.get_model_name.return_value = "test.en"
+        app.hotkeys = MagicMock()
+        app.hotkeys.supported = False
+        listener = MagicMock()
+        app.hotkeys.create_listener.return_value = listener
+        app.capabilities = PlatformCapabilities(False, False, True, False, "Wayland sessions usually block global key capture and synthetic typing.")
+
+        def set_shutdown():
+            time.sleep(0.1)
+            app.shutdown_event.set()
+
+        thread = threading.Thread(target=set_shutdown)
+        thread.start()
+        app.run()
+        thread.join()
+
+        app.hotkeys.create_listener.assert_called_once()
+        listener.start.assert_called_once()

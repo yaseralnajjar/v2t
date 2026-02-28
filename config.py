@@ -13,3 +13,11 @@ MODEL = os.environ.get("V2T_MODEL", "small.en")
 #   "simple" - simple sine wave tones (880Hz/440Hz)
 #   "click" - short click sounds
 SOUND_TYPE = os.environ.get("V2T_SOUND", "bloop")
+
+# Platform configuration
+# "auto" uses the current OS. Explicit values are useful for testing backend selection.
+PLATFORM_BACKEND = os.environ.get("V2T_PLATFORM_BACKEND", "auto")
+INJECT_MODE = os.environ.get("V2T_INJECT_MODE", "auto")
+HOTKEY_BACKEND = os.environ.get("V2T_HOTKEY_BACKEND", "auto")
+LINUX_SESSION = os.environ.get("V2T_LINUX_SESSION", "")
+ALLOW_DEGRADED_MODE = os.environ.get("V2T_ALLOW_DEGRADED_MODE", "0")

@@ -1,0 +1,220 @@
+import ctypes
+import ctypes.util
+import os
+import subprocess
+import time
+
+from pynput.keyboard import Controller
+
+from backends.base import BasePermissionManager, BaseTextInjector
+
+
+class MacOSTextInjector(BaseTextInjector):
+    platform_name = "darwin"
+
+    def __init__(self):
+        self.keyboard = Controller()
+        self._use_applescript = os.environ.get("V2T_DISABLE_APPLESCRIPT") != "1"
+
+    def type_text(self, text):
+        if not text:
+            return
+
+        time.sleep(0.1)
+
+        if self._use_applescript:
+            try:
+                safe_text = text.replace("\\", "\\\\").replace('"', '\\"')
+                script = f'tell application "System Events" to keystroke "{safe_text}"'
+
+                subprocess.run(
+                    ["osascript", "-e", script],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                subprocess.run(
+                    ["osascript", "-e", 'tell application "System Events" to keystroke " "'],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                return
+            except Exception as exc:
+                error_details = str(exc)
+                stderr = getattr(exc, "stderr", None)
+                if stderr:
+                    error_details = f"{error_details} {stderr}"
+
+                if "not allowed to send keystrokes" in error_details:
+                    self._use_applescript = False
+                    print(
+                        "AppleScript text injection is not permitted for this process. "
+                        "Falling back to pynput for this session.",
+                        flush=True,
+                    )
+                    print(
+                        "To fix this: System Settings > Privacy & Security > Accessibility "
+                        "and enable your terminal app (Terminal/iTerm/VS Code).",
+                        flush=True,
+                    )
+                    print(
+                        "Also check: System Settings > Privacy & Security > Automation "
+                        "and allow control of System Events.",
+                        flush=True,
+                    )
+                else:
+                    print(
+                        f"AppleScript injection failed: {error_details}. Falling back to pynput.",
+                        flush=True,
+                    )
+
+        self.keyboard.type(text)
+        self.keyboard.type(" ")
+
+
+def _load_core_graphics():
+    library_path = ctypes.util.find_library("CoreGraphics")
+    if not library_path:
+        library_path = "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
+    try:
+        return ctypes.CDLL(library_path)
+    except OSError:
+        return None
+
+
+def _check_or_request_event_access(core_graphics, preflight_name, request_name, label):
+    preflight = getattr(core_graphics, preflight_name, None)
+    request = getattr(core_graphics, request_name, None)
+    if preflight is None or request is None:
+        print(f"Could not verify macOS {label} permission on this system.", flush=True)
+        return False
+
+    preflight.restype = ctypes.c_bool
+    request.restype = ctypes.c_bool
+
+    if preflight():
+        return True
+
+    print(f"Requesting macOS {label} permission...", flush=True)
+    return bool(request())
+
+
+def _request_automation_permission():
+    script = 'tell application "System Events" to get name of first process'
+    try:
+        subprocess.run(
+            ["osascript", "-e", script],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return True
+    except Exception as exc:
+        details = str(exc)
+        stderr = getattr(exc, "stderr", None)
+        if stderr:
+            details = f"{details} {stderr}"
+
+        if (
+            "not authorized to send Apple events to System Events" in details
+            or "not permitted to send keystrokes" in details
+            or "not allowed to send keystrokes" in details
+        ):
+            print("Automation permission for System Events is missing.", flush=True)
+        else:
+            print(f"Automation permission check failed: {details}", flush=True)
+        return False
+
+
+def _print_manual_permission_steps(missing):
+    print("", flush=True)
+    print("Manual permission setup:", flush=True)
+    print("1) Open System Settings", flush=True)
+    print("2) Go to Privacy & Security", flush=True)
+
+    if "Accessibility" in missing:
+        print("3) Open Accessibility", flush=True)
+        print("   Path: System Settings > Privacy & Security > Accessibility", flush=True)
+        print("   Enable the app running ./start.sh (Terminal, iTerm, or VS Code).", flush=True)
+
+    if "Input Monitoring" in missing:
+        print("4) Open Input Monitoring", flush=True)
+        print("   Path: System Settings > Privacy & Security > Input Monitoring", flush=True)
+        print("   Enable the app running ./start.sh (Terminal, iTerm, or VS Code).", flush=True)
+
+    if "Automation (System Events)" in missing:
+        print("5) Open Automation", flush=True)
+        print("   Path: System Settings > Privacy & Security > Automation", flush=True)
+        print("   Allow your app to control System Events.", flush=True)
+
+    print("6) Quit and reopen that app, then run ./start.sh again.", flush=True)
+
+
+def _open_settings_for_missing_permissions(missing):
+    urls = []
+    if "Accessibility" in missing:
+        urls.append("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+    if "Input Monitoring" in missing:
+        urls.append("x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
+    if "Automation (System Events)" in missing:
+        urls.append("x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")
+
+    for url in urls:
+        try:
+            subprocess.run(["open", url], check=False)
+        except Exception:
+            pass
+
+
+class MacOSPermissionManager(BasePermissionManager):
+    platform_name = "darwin"
+
+    def preflight(self):
+        print("Checking macOS permissions...", flush=True)
+
+        missing = []
+        critical_missing = []
+        core_graphics = _load_core_graphics()
+
+        if core_graphics is None:
+            print("Could not load CoreGraphics; skipping permission preflight checks.", flush=True)
+        else:
+            listen_ok = _check_or_request_event_access(
+                core_graphics,
+                "CGPreflightListenEventAccess",
+                "CGRequestListenEventAccess",
+                "Input Monitoring",
+            )
+            if not listen_ok:
+                missing.append("Input Monitoring")
+                critical_missing.append("Input Monitoring")
+
+            post_ok = _check_or_request_event_access(
+                core_graphics,
+                "CGPreflightPostEventAccess",
+                "CGRequestPostEventAccess",
+                "Accessibility",
+            )
+            if not post_ok:
+                missing.append("Accessibility")
+                critical_missing.append("Accessibility")
+
+        automation_ok = _request_automation_permission()
+        if not automation_ok:
+            missing.append("Automation (System Events)")
+            os.environ["V2T_DISABLE_APPLESCRIPT"] = "1"
+
+        if missing:
+            print(f"Missing macOS permissions: {', '.join(missing)}", flush=True)
+            _print_manual_permission_steps(missing)
+            _open_settings_for_missing_permissions(missing)
+
+        if critical_missing:
+            print(
+                "Critical permissions are missing. Grant access, then restart ./start.sh.",
+                flush=True,
+            )
+            return False
+
+        return True
