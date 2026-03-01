@@ -10,7 +10,7 @@ from injector import TextInjector
 from sounds import play_start_sound, play_stop_sound
 from permissions import request_runtime_permissions
 from hotkeys import create_hotkey_backend
-from backends import get_platform_capabilities
+from backends import get_platform_capabilities, get_platform_name
 
 
 class VoiceToTextApp:
@@ -49,8 +49,17 @@ class VoiceToTextApp:
             return default
         return value.strip().lower() not in ("0", "false", "off", "no")
 
+    @staticmethod
+    def _default_gui_enabled(platform_name=None):
+        if platform_name is None:
+            platform_name = get_platform_name()
+        return not platform_name.startswith("linux")
+
     def _create_overlay(self):
-        if not self._env_flag("V2T_GUI", default=True):
+        if not self._env_flag("V2T_GUI", default=self._default_gui_enabled()):
+            return None
+
+        if not self.capabilities.overlay_supported:
             return None
 
         try:

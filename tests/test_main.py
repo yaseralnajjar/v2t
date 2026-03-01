@@ -29,6 +29,18 @@ def _set_command_hotkey_backend(app):
 class TestVoiceToTextAppInit:
     """Tests for VoiceToTextApp initialization."""
 
+    def test_default_gui_enabled_on_non_linux(self):
+        from main import VoiceToTextApp
+
+        assert VoiceToTextApp._default_gui_enabled("darwin") is True
+        assert VoiceToTextApp._default_gui_enabled("win32") is True
+
+    def test_default_gui_disabled_on_linux(self):
+        from main import VoiceToTextApp
+
+        assert VoiceToTextApp._default_gui_enabled("linux") is False
+        assert VoiceToTextApp._default_gui_enabled("linux2") is False
+
     @patch('main.AudioRecorder')
     @patch('main.AudioTranscriber')
     @patch('main.TextInjector')

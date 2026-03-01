@@ -56,6 +56,8 @@ A desktop application that captures microphone input, transcribes speech using a
    uv run python ./main.py
    ```
 
+   On Linux, `./start.sh` now defaults to terminal-only mode with `V2T_GUI=0` to avoid Qt `xcb` plugin startup failures on systems missing the required runtime packages. If you want the floating overlay, install the needed Qt packages first, then run with `V2T_GUI=1`.
+
 ## Permissions
 
 The app requires the following macOS permissions:
@@ -170,12 +172,17 @@ V2T_SOUND=click ./start.sh
 You can enable/disable the floating overlay with `V2T_GUI`:
 
 ```bash
-# Default: enabled
+# Default: enabled on macOS/Windows, disabled on Linux
 ./start.sh
 
 # Disable overlay and run in terminal-only mode
 V2T_GUI=0 ./start.sh
+
+# Force-enable the overlay on Linux after installing the needed Qt packages
+V2T_GUI=1 ./start.sh
 ```
+
+On Linux, Qt may also require the X11 cursor plugin package before the overlay can start. For Debian/Ubuntu, install `libxcb-cursor0`.
 
 ### Platform Backends
 
